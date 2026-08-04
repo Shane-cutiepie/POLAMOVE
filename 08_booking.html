@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PolaMove — Booking Screen</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#C41E3A;--rl:#E0314F;--rd:#9B1830;
+  --rg:rgba(196,30,58,.13);--rs:0 8px 32px rgba(196,30,58,.32);
+  --bg:#0B0B10;--s1:#141419;--s2:#1C1C24;--s3:#24242E;
+  --b1:rgba(255,255,255,.06);--b2:rgba(255,255,255,.11);--b3:rgba(255,255,255,.18);
+  --t1:#F0F0F8;--t2:#9090B0;--t3:#50507A;
+  --grn:#15803D;--grn2:#22C55E;--grn3:rgba(34,197,94,.13);
+  --amber:#B45309;--r:12px;--rL:20px;--rXL:28px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;background:#05050A;font-family:'DM Sans',sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased;overflow:hidden}
+.wrap{display:flex;align-items:center;justify-content:center;width:100%;height:100vh}
+.phone{width:390px;min-width:390px;height:100vh;max-height:844px;position:relative;overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px rgba(255,255,255,.05),0 40px 120px rgba(0,0,0,.9)}
+@media(min-height:860px){.phone{border-radius:44px;height:844px}}
+.logo{display:inline-flex;align-items:center;font-family:'Syne',sans-serif;font-weight:800;gap:1px}
+.lw{display:inline-flex;align-items:center;justify-content:center}
+.btn-r{width:100%;padding:14px;border:none;border-radius:var(--rL);background:linear-gradient(135deg,var(--rl),var(--red));color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:var(--rs);letter-spacing:.3px}
+.btn-r:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(196,30,58,.38)}.btn-r:active{transform:none}
+.btn-g{width:100%;padding:12px;border:1.5px solid var(--b2);border-radius:var(--rL);background:none;color:var(--t2);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s}
+.btn-g:hover{border-color:var(--rl);color:var(--rl)}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fl{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.7px}
+.fi{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--r);padding:12px 13px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--t1);outline:none;transition:border-color .18s,box-shadow .18s;-webkit-appearance:none}
+.fi::placeholder{color:var(--t3)}.fi:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(196,30,58,.1)}
+.fi-w{position:relative}.eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:14px;cursor:pointer;color:var(--t3)}
+.fr{display:flex;gap:8px}.fr .fg{flex:1}
+.hint{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);padding:9px 12px;font-size:12px;color:var(--t2);text-align:center}.hint b{color:var(--rl)}
+.sdots{display:flex;gap:5px;align-items:center;justify-content:center}
+.sd{height:3px;width:16px;border-radius:3px;background:var(--s2);transition:all .28s}.sd.on{width:26px;background:var(--red)}.sd.dn{background:var(--rd)}
+.slbl{font-size:11px;color:var(--t3);text-align:center;font-weight:500}
+.ah{background:var(--red);padding:0 22px 46px;flex-shrink:0;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center}
+.ah-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 80% 100% at 100% 0%,rgba(255,255,255,.11),transparent)}
+.ah-badge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,.62);letter-spacing:3px;text-transform:uppercase;position:relative;z-index:2;margin-top:3px}
+.tabs{display:flex;background:rgba(255,255,255,.14);border-radius:50px;padding:4px;margin-bottom:17px;position:relative;z-index:2;width:100%;margin-top:13px}
+.tab{flex:1;padding:9px;border-radius:50px;border:none;background:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:rgba(255,255,255,.58);cursor:pointer;transition:all .2s}
+.tab.on{background:#fff;color:var(--red);box-shadow:0 2px 10px rgba(0,0,0,.17)}
+.ab{flex:1;overflow-y:auto;background:var(--bg);padding:22px 20px 32px;display:flex;flex-direction:column;gap:12px;margin-top:-22px;border-radius:22px 22px 0 0}
+.ab::-webkit-scrollbar{display:none}
+.topbar{background:var(--red);padding:15px 18px 44px;position:relative;overflow:hidden;flex-shrink:0}
+.tb-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 70% 90% at 95% 0%,rgba(255,255,255,.11),transparent)}
+.tb-row{display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1}
+.tb-name{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff}
+.tb-sub{font-size:12px;color:rgba(255,255,255,.66);margin-top:2px}
+.tb-ico{width:37px;height:37px;border-radius:11px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex-shrink:0;position:relative}
+.ndot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:#FBBF24;border-radius:50%;border:1.5px solid var(--red)}
+.loc-row{position:relative;z-index:1;margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:50px;padding:6px 12px;cursor:pointer;max-width:100%}
+.loc-txt{font-size:12px;color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:195px}
+.map-zone{flex:1;position:relative;margin-top:-22px}
+.ml{position:absolute;inset:0;z-index:0}
+.leaflet-control-container{display:none!important}
+.np-pill{position:absolute;top:9px;right:9px;z-index:10;background:var(--s1);border:1.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;display:flex;align-items:center;gap:7px;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.np-n{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--rl)}.np-l{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.3px}
+.bs{background:var(--s1);border-radius:22px 22px 0 0;flex-shrink:0;border-top:1px solid var(--b2);box-shadow:0 -6px 28px rgba(0,0,0,.36);padding:0 15px 3px}
+.pull{width:34px;height:3.5px;background:var(--s3);border-radius:3px;margin:10px auto 13px}
+.wb{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--rL);padding:11px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .18s}
+.wb:hover{border-color:var(--red)}
+.wb-i{font-size:16px}.wb-t{flex:1;font-size:13px;color:var(--t3);font-weight:500}.wb-a{font-size:17px;color:var(--rl)}
+.chips{display:flex;gap:6px;margin-top:8px}
+.chip{flex:1;background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:7px 8px;display:flex;align-items:center;gap:6px}
+.chip-i{font-size:13px}.chip-v{font-size:11px;font-weight:700;color:var(--t1)}.chip-s{font-size:9px;color:var(--t3)}
+.bnav{background:var(--s1);border-top:1px solid var(--b1);display:flex;padding:5px 0 18px;flex-shrink:0}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:3px}
+.nb-box{width:38px;height:27px;border-radius:50px;display:flex;align-items:center;justify-content:center;font-size:17px;transition:all .25s}
+.nb.on .nb-box{background:var(--rg)}.nb-lbl{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.3px}
+.nb.on .nb-lbl{color:var(--rl)}
+.phdr{display:flex;align-items:center;gap:10px;padding:12px 15px;background:var(--s1);border-bottom:1px solid var(--b1);flex-shrink:0}
+.bkbtn{width:34px;height:34px;border-radius:9px;background:var(--s2);border:1.5px solid var(--b2);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;color:var(--t2);line-height:1;flex-shrink:0}
+.bkbtn:hover{border-color:var(--red);color:var(--rl)}
+.ptitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:var(--t1)}
+.scroll{flex:1;overflow-y:auto}.scroll::-webkit-scrollbar{display:none}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--s1);border:1px solid var(--b2);border-radius:50px;padding:9px 18px;font-size:13px;font-weight:600;color:var(--t1);z-index:9999;opacity:0;transition:all .25s;white-space:nowrap;box-shadow:0 8px 28px rgba(0,0,0,.44);pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.loc-card{background:var(--s1);border-radius:var(--rL);padding:12px 14px;border:1px solid var(--b2)}
+.lrow{display:flex;align-items:center;gap:9px;padding:5px 0}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.ldot.f{background:var(--rl);box-shadow:0 0 0 3px rgba(196,30,58,.18)}
+.ldot.t{background:var(--t1);box-shadow:0 0 0 3px rgba(255,255,255,.07)}
+.lline{width:2px;height:13px;background:var(--b2);margin-left:4px}
+.lsel{flex:1;background:none;border:none;outline:none;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;color:var(--t1);cursor:pointer;-webkit-appearance:none;width:100%}
+.lsel option{background:var(--s2);color:var(--t1)}
+.lsel-w{flex:1;position:relative}
+.lsel-w::after{content:'▾';position:absolute;right:0;top:50%;transform:translateY(-50%);color:var(--t3);font-size:10px;pointer-events:none}
+.fare-box{background:var(--rg);border:1.5px solid rgba(196,30,58,.22);border-radius:var(--rL);padding:12px 14px;display:flex;align-items:center;gap:11px}
+.fb-amt{font-family:'Syne',sans-serif;font-size:27px;font-weight:800;color:var(--rl)}
+.fb-lbl{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px}
+.fb-note{font-size:11px;color:var(--t3);margin-top:2px}
+.calc-box{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:9px 11px;display:flex;flex-direction:column;gap:4px}
+.cr{display:flex;justify-content:space-between;font-size:12px;color:var(--t2)}
+.cr.tot{color:var(--t1);font-weight:700;border-top:1px solid var(--b1);padding-top:4px;margin-top:2px}
+.sec-t{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px}
+.rtc{background:var(--s1);border:1.5px solid var(--b2);border-radius:var(--rL);padding:13px 14px;display:flex;align-items:flex-start;gap:12px;cursor:pointer;transition:all .23s;position:relative;overflow:hidden}
+.rtc::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--rg),transparent);opacity:0;transition:opacity .23s}
+.rtc.sel{border-color:var(--rl);background:rgba(196,30,58,.05)}.rtc.sel::before{opacity:1}
+.rt-ico{font-size:25px;flex-shrink:0;position:relative;z-index:1}
+.rt-nm{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--t1);position:relative;z-index:1}
+.rt-de{font-size:11px;color:var(--t2);margin-top:2px;line-height:1.42;position:relative;z-index:1}
+.rt-pr{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:var(--rl);margin-left:auto;flex-shrink:0;position:relative;z-index:1;align-self:center}
+.seat-row{display:flex;align-items:center;gap:6px;margin-top:9px;position:relative;z-index:1}
+.seat-lbl{font-size:11px;color:var(--t2);font-weight:600}
+.seat-btns{display:flex;gap:4px}
+.seatb{width:28px;height:28px;border-radius:7px;border:1.5px solid var(--b2);background:var(--s2);color:var(--t2);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .17s}
+.seatb.on{background:var(--red);border-color:var(--red);color:#fff}
+.bk-foot{padding:11px 15px 26px;background:var(--bg);border-top:1px solid var(--b1);flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="phone">
+
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg)">
+  <div class="phdr"><div class="bkbtn" onclick="showToast('← Back to Home')">‹</div><div class="ptitle">Book a Ride</div></div>
+  <div class="scroll">
+    <div style="padding:13px 15px 0">
+      <div class="loc-card">
+        <div class="lrow"><div class="ldot f"></div><div class="lsel-w"><select class="lsel" id="bk-pickup" onchange="onLocChange()"><option value="">Select pickup…</option></select></div></div>
+        <div class="lline" style="margin-left:18px"></div>
+        <div class="lrow"><div class="ldot t"></div><div class="lsel-w"><select class="lsel" id="bk-dest" onchange="onLocChange()"><option value="">Select destination…</option></select></div></div>
+      </div>
+    </div>
+    <div style="padding:9px 15px 0">
+      <div class="fare-box"><span style="font-size:22px">💰</span>
+        <div><div class="fb-lbl">Total Fare</div><div class="fb-amt" id="bk-fare">₱—</div><div class="fb-note" id="bk-note">Select pickup & destination</div></div>
+      </div>
+    </div>
+    <div style="padding:7px 15px 0"><div class="calc-box" id="calc-box"><div class="cr" style="color:var(--t3);justify-content:center">Select locations to see breakdown</div></div></div>
+    <div style="padding:13px 15px 7px"><div class="sec-t">Choose Ride Type</div></div>
+    <div style="padding:0 15px 8px">
+      <div class="rtc sel" id="rt-solo" onclick="pickType('solo')">
+        <div class="rt-ico">🚖</div>
+        <div style="flex:1"><div class="rt-nm">PolaSolo</div><div class="rt-de">Exclusive ride — just for you<br>No waiting · Small surcharge added</div></div>
+        <div class="rt-pr" id="solo-p">₱—</div>
+      </div>
+    </div>
+    <div style="padding:0 15px 16px">
+      <div class="rtc" id="rt-share" onclick="pickType('share')">
+        <div class="rt-ico">👥</div>
+        <div style="flex:1"><div class="rt-nm">PolaShare</div><div class="rt-de">Group ride — fare × seats booked</div>
+          <div class="seat-row" id="seat-row" style="display:none">
+            <div class="seat-lbl">Seats:</div>
+            <div class="seat-btns">
+              <button class="seatb" onclick="setSeat(event,2)">2</button>
+              <button class="seatb on" onclick="setSeat(event,3)">3</button>
+              <button class="seatb" onclick="setSeat(event,4)">4</button>
+              <button class="seatb" onclick="setSeat(event,5)">5</button>
+            </div>
+          </div>
+        </div>
+        <div class="rt-pr" id="share-p">₱—</div>
+      </div>
+    </div>
+  </div>
+  <div class="bk-foot"><button class="btn-r" onclick="showToast('→ Searching for driver…')">Book Ride Now 🛺</button></div>
+</div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+const PL=[
+  {id:'centro',name:'Polangui Centro',lat:13.2931,lng:123.4879},
+  {id:'market',name:'Polangui Public Market',lat:13.2935,lng:123.4910},
+  {id:'terminal',name:'Polangui Integrated Terminal',lat:13.2920,lng:123.4842},
+  {id:'bucs',name:'Bicol Univ. Polangui',lat:13.3010,lng:123.4862},
+  {id:'hospital',name:'Dr. Esteban Ante Hospital',lat:13.2870,lng:123.4920},
+  {id:'lcc',name:'LCC Mall Polangui',lat:13.2905,lng:123.4915},
+  {id:'jollibee',name:'Jollibee Polangui',lat:13.2895,lng:123.4900},
+  {id:'liboro',name:'Liboro, Polangui',lat:13.3058,lng:123.4924},
+  {id:'baligang',name:'Baligang, Polangui',lat:13.2800,lng:123.4840},
+  {id:'hall',name:'Municipal Hall',lat:13.2950,lng:123.4880},
+];
+const FARES={'centro-market':10,'centro-terminal':15,'centro-bucs':20,'centro-hospital':25,'centro-lcc':15,'centro-jollibee':15,'centro-liboro':20,'centro-baligang':20,'centro-hall':10,'market-terminal':15,'market-lcc':10,'market-hospital':20,'terminal-bucs':20,'lcc-hospital':15};
+const SOLO_S=5;
+let rideType='solo',seats=3,pickupId='',destId='';
+function gp(id){return PL.find(p=>p.id===id);}
+function getFare(a,b){const k=[a,b].sort().join('-');return FARES[k]||15;}
+window.addEventListener('load',()=>{
+  ['bk-pickup','bk-dest'].forEach(id=>{
+    const s=document.getElementById(id);
+    s.innerHTML='<option value="">Select location…</option>';
+    PL.forEach(p=>s.innerHTML+=`<option value="${p.id}">${p.name}</option>`);
+  });
+  document.getElementById('bk-pickup').value='centro';pickupId='centro';
+});
+function onLocChange(){
+  pickupId=document.getElementById('bk-pickup').value;
+  destId=document.getElementById('bk-dest').value;
+  if(pickupId&&destId&&pickupId===destId){showToast('⚠️ Same location!');document.getElementById('bk-dest').value='';destId='';return;}
+  updateFare();
+}
+function updateFare(){
+  if(!pickupId||!destId){document.getElementById('bk-fare').textContent='₱—';document.getElementById('bk-note').textContent='Select pickup & destination';document.getElementById('calc-box').innerHTML='<div class="cr" style="color:var(--t3);justify-content:center">Select locations to see breakdown</div>';document.getElementById('solo-p').textContent='₱—';document.getElementById('share-p').textContent='₱—';return;}
+  const base=getFare(pickupId,destId);const soloF=base+SOLO_S;const shareF=base*seats;
+  const disp=rideType==='solo'?soloF:shareF;
+  document.getElementById('bk-fare').textContent='₱'+disp;
+  document.getElementById('bk-note').textContent=rideType==='solo'?'PolaSolo — includes ₱'+SOLO_S+' surcharge':'PolaShare — '+seats+' seats × ₱'+base;
+  document.getElementById('solo-p').textContent='₱'+soloF;
+  document.getElementById('share-p').textContent='₱'+(rideType==='share'?shareF:base*seats);
+  let cb='';
+  if(rideType==='solo'){cb+=`<div class="cr"><span>Base fare</span><span>₱${base}</span></div><div class="cr"><span>PolaSolo surcharge</span><span>+₱${SOLO_S}</span></div><div class="cr tot"><span>Total</span><span>₱${soloF}</span></div>`;}
+  else{cb+=`<div class="cr"><span>Base fare per seat</span><span>₱${base}</span></div><div class="cr"><span>Seats booked</span><span>× ${seats}</span></div><div class="cr tot"><span>Total</span><span>₱${shareF}</span></div>`;}
+  document.getElementById('calc-box').innerHTML=cb;
+}
+function pickType(t){rideType=t;document.getElementById('rt-solo').classList.toggle('sel',t==='solo');document.getElementById('rt-share').classList.toggle('sel',t==='share');document.getElementById('seat-row').style.display=t==='share'?'flex':'none';updateFare();}
+function setSeat(e,n){e.stopPropagation();seats=n;document.querySelectorAll('.seatb').forEach(b=>b.classList.remove('on'));e.target.classList.add('on');updateFare();}</script>
+</body>
+</html>

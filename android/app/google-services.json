@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "688406058644",
+    "project_id": "polamove-54ee1",
+    "storage_bucket": "polamove-54ee1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:688406058644:android:570af98b0d2514072a8681",
+        "android_client_info": {
+          "package_name": "com.example.polamove"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmvZ65-BU80LcjKquB3olBkT7mgPFQTeQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

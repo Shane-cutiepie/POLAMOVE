@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PolaMove — Auth — Driver Step 1</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
+<style>
+/* (UNCHANGED CSS — kept exactly as your original) */
+:root{
+  --red:#C41E3A;--rl:#E0314F;--rd:#9B1830;
+  --rg:rgba(196,30,58,.13);--rs:0 8px 32px rgba(196,30,58,.32);
+  --bg:#0B0B10;--s1:#141419;--s2:#1C1C24;--s3:#24242E;
+  --b1:rgba(255,255,255,.06);--b2:rgba(255,255,255,.11);--b3:rgba(255,255,255,.18);
+  --t1:#F0F0F8;--t2:#9090B0;--t3:#50507A;
+  --grn:#15803D;--grn2:#22C55E;--grn3:rgba(34,197,94,.13);
+  --amber:#B45309;--r:12px;--rL:20px;--rXL:28px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;background:#05050A;font-family:'DM Sans',sans-serif;color:var(--t1);overflow:hidden}
+.wrap{display:flex;align-items:center;justify-content:center;width:100%;height:100vh}
+.phone{width:390px;min-width:390px;height:100vh;max-height:844px;position:relative;overflow:hidden;background:var(--bg)}
+.logo{display:inline-flex;align-items:center;font-family:'Syne',sans-serif;font-weight:800}
+.btn-r{width:100%;padding:14px;border:none;border-radius:var(--rL);background:linear-gradient(135deg,var(--rl),var(--red));color:#fff;font-family:'Syne';font-size:14px;font-weight:700;cursor:pointer}
+.btn-g{width:100%;padding:12px;border:1.5px solid var(--b2);border-radius:var(--rL);background:none;color:var(--t2);font-size:13px;font-weight:600;cursor:pointer}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fl{font-size:11px;font-weight:700;color:var(--t2)}
+.fi{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--r);padding:12px;color:var(--t1)}
+.fi-w{position:relative}
+.eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer}
+.fr{display:flex;gap:8px}
+.ah{background:var(--red);padding:20px}
+.tabs{display:flex;background:rgba(255,255,255,.14);border-radius:50px;padding:4px;margin-bottom:17px}
+.tab{flex:1;padding:9px;border-radius:50px;border:none;background:none;color:#fff;cursor:pointer}
+.tab.on{background:#fff;color:var(--red)}
+.ab{flex:1;padding:20px;display:flex;flex-direction:column;gap:12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 20px;border-radius:20px;opacity:0;transition:.3s}
+.toast.show{opacity:1}
+</style>
+</head>
+
+<body>
+<div class="wrap"><div class="phone">
+
+<div id="auth-d" style="display:flex;flex-direction:column;height:100%">
+  
+  <div class="ah">
+    <div class="tabs">
+      <button class="tab on" id="dt-su" onclick="switchTab('su')">Sign Up</button>
+      <button class="tab" id="dt-li" onclick="switchTab('li')">Log In</button>
+    </div>
+
+    <div class="logo" style="font-size:25px;color:#fff">PolaMove</div>
+    <div style="color:#fff;font-size:12px;margin-top:5px">Driver — Step 1 of 2</div>
+  </div>
+
+  <!-- SIGN UP -->
+  <div class="ab" id="d-su">
+    <div class="fr">
+      <div class="fg"><div class="fl">First Name</div><input class="fi"></div>
+      <div class="fg"><div class="fl">Last Name</div><input class="fi"></div>
+    </div>
+
+    <div class="fg"><div class="fl">Phone</div><input class="fi"></div>
+
+    <div class="fg">
+      <div class="fl">Password</div>
+      <div class="fi-w">
+        <input class="fi" id="ds-pw" type="password">
+        <button class="eye" onclick="tpw('ds-pw',this)">👁️</button>
+      </div>
+    </div>
+
+    <!-- ✅ FIXED -->
+    <button class="btn-r" onclick="goToStep2()">Continue →</button>
+    <button class="btn-g" onclick="goBack()">← Back</button>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="ab" id="d-li" style="display:none">
+    <div class="fg"><div class="fl">Phone</div><input class="fi"></div>
+
+    <div class="fg">
+      <div class="fl">Password</div>
+      <div class="fi-w">
+        <input class="fi" type="password">
+      </div>
+    </div>
+
+    <button class="btn-r" onclick="window.location.href='10_home_driver.html'">Log In →</button>
+    <button class="btn-g" onclick="goBack()">← Back</button>
+  </div>
+
+</div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2000);
+}
+
+function tpw(id,btn){
+  const i=document.getElementById(id);
+  i.type=i.type==='password'?'text':'password';
+  btn.textContent=i.type==='password'?'👁️':'🙈';
+}
+
+function switchTab(t){
+  if(t==='su'){
+    document.getElementById('d-su').style.display='flex';
+    document.getElementById('d-li').style.display='none';
+    document.getElementById('dt-su').classList.add('on');
+    document.getElementById('dt-li').classList.remove('on');
+  } else {
+    document.getElementById('d-su').style.display='none';
+    document.getElementById('d-li').style.display='flex';
+    document.getElementById('dt-su').classList.remove('on');
+    document.getElementById('dt-li').classList.add('on');
+  }
+}
+
+/* ✅ NEW FUNCTIONS */
+function goToStep2(){
+  window.location.href = "05_auth_driver_step2.html";
+}
+
+function goBack(){
+  window.location.href = "02_role_select.html";
+}
+</script>
+
+</body>
+</html>

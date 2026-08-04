@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PolaMove — Home — Passenger</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#C41E3A;--rl:#E0314F;--rd:#9B1830;
+  --rg:rgba(196,30,58,.13);--rs:0 8px 32px rgba(196,30,58,.32);
+  --bg:#0B0B10;--s1:#141419;--s2:#1C1C24;--s3:#24242E;
+  --b1:rgba(255,255,255,.06);--b2:rgba(255,255,255,.11);--b3:rgba(255,255,255,.18);
+  --t1:#F0F0F8;--t2:#9090B0;--t3:#50507A;
+  --grn:#15803D;--grn2:#22C55E;--grn3:rgba(34,197,94,.13);
+  --amber:#B45309;--r:12px;--rL:20px;--rXL:28px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;background:#05050A;font-family:'DM Sans',sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased;overflow:hidden}
+.wrap{display:flex;align-items:center;justify-content:center;width:100%;height:100vh}
+.phone{width:390px;min-width:390px;height:100vh;max-height:844px;position:relative;overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px rgba(255,255,255,.05),0 40px 120px rgba(0,0,0,.9)}
+@media(min-height:860px){.phone{border-radius:44px;height:844px}}
+.logo{display:inline-flex;align-items:center;font-family:'Syne',sans-serif;font-weight:800;gap:1px}
+.lw{display:inline-flex;align-items:center;justify-content:center}
+.btn-r{width:100%;padding:14px;border:none;border-radius:var(--rL);background:linear-gradient(135deg,var(--rl),var(--red));color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:var(--rs);letter-spacing:.3px}
+.btn-r:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(196,30,58,.38)}.btn-r:active{transform:none}
+.btn-g{width:100%;padding:12px;border:1.5px solid var(--b2);border-radius:var(--rL);background:none;color:var(--t2);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s}
+.btn-g:hover{border-color:var(--rl);color:var(--rl)}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fl{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.7px}
+.fi{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--r);padding:12px 13px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--t1);outline:none;transition:border-color .18s,box-shadow .18s;-webkit-appearance:none}
+.fi::placeholder{color:var(--t3)}.fi:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(196,30,58,.1)}
+.fi-w{position:relative}.eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:14px;cursor:pointer;color:var(--t3)}
+.fr{display:flex;gap:8px}.fr .fg{flex:1}
+.hint{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);padding:9px 12px;font-size:12px;color:var(--t2);text-align:center}.hint b{color:var(--rl)}
+.sdots{display:flex;gap:5px;align-items:center;justify-content:center}
+.sd{height:3px;width:16px;border-radius:3px;background:var(--s2);transition:all .28s}.sd.on{width:26px;background:var(--red)}.sd.dn{background:var(--rd)}
+.slbl{font-size:11px;color:var(--t3);text-align:center;font-weight:500}
+.ah{background:var(--red);padding:0 22px 46px;flex-shrink:0;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center}
+.ah-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 80% 100% at 100% 0%,rgba(255,255,255,.11),transparent)}
+.ah-badge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,.62);letter-spacing:3px;text-transform:uppercase;position:relative;z-index:2;margin-top:3px}
+.tabs{display:flex;background:rgba(255,255,255,.14);border-radius:50px;padding:4px;margin-bottom:17px;position:relative;z-index:2;width:100%;margin-top:13px}
+.tab{flex:1;padding:9px;border-radius:50px;border:none;background:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:rgba(255,255,255,.58);cursor:pointer;transition:all .2s}
+.tab.on{background:#fff;color:var(--red);box-shadow:0 2px 10px rgba(0,0,0,.17)}
+.ab{flex:1;overflow-y:auto;background:var(--bg);padding:22px 20px 32px;display:flex;flex-direction:column;gap:12px;margin-top:-22px;border-radius:22px 22px 0 0}
+.ab::-webkit-scrollbar{display:none}
+.topbar{background:var(--red);padding:15px 18px 44px;position:relative;overflow:hidden;flex-shrink:0}
+.tb-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 70% 90% at 95% 0%,rgba(255,255,255,.11),transparent)}
+.tb-row{display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1}
+.tb-name{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff}
+.tb-sub{font-size:12px;color:rgba(255,255,255,.66);margin-top:2px}
+.tb-ico{width:37px;height:37px;border-radius:11px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex-shrink:0;position:relative}
+.ndot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:#FBBF24;border-radius:50%;border:1.5px solid var(--red)}
+.loc-row{position:relative;z-index:1;margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:50px;padding:6px 12px;cursor:pointer;max-width:100%}
+.loc-txt{font-size:12px;color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:195px}
+.map-zone{flex:1;position:relative;margin-top:-22px}
+.ml{position:absolute;inset:0;z-index:0}
+.leaflet-control-container{display:none!important}
+.np-pill{position:absolute;top:9px;right:9px;z-index:10;background:var(--s1);border:1.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;display:flex;align-items:center;gap:7px;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.np-n{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--rl)}.np-l{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.3px}
+.bs{background:var(--s1);border-radius:22px 22px 0 0;flex-shrink:0;border-top:1px solid var(--b2);box-shadow:0 -6px 28px rgba(0,0,0,.36);padding:0 15px 3px}
+.pull{width:34px;height:3.5px;background:var(--s3);border-radius:3px;margin:10px auto 13px}
+.wb{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--rL);padding:11px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .18s}
+.wb:hover{border-color:var(--red)}
+.wb-i{font-size:16px}.wb-t{flex:1;font-size:13px;color:var(--t3);font-weight:500}.wb-a{font-size:17px;color:var(--rl)}
+.chips{display:flex;gap:6px;margin-top:8px}
+.chip{flex:1;background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:7px 8px;display:flex;align-items:center;gap:6px}
+.chip-i{font-size:13px}.chip-v{font-size:11px;font-weight:700;color:var(--t1)}.chip-s{font-size:9px;color:var(--t3)}
+.bnav{background:var(--s1);border-top:1px solid var(--b1);display:flex;padding:5px 0 18px;flex-shrink:0}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:3px}
+.nb-box{width:38px;height:27px;border-radius:50px;display:flex;align-items:center;justify-content:center;font-size:17px;transition:all .25s}
+.nb.on .nb-box{background:var(--rg)}.nb-lbl{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.3px}
+.nb.on .nb-lbl{color:var(--rl)}
+.phdr{display:flex;align-items:center;gap:10px;padding:12px 15px;background:var(--s1);border-bottom:1px solid var(--b1);flex-shrink:0}
+.bkbtn{width:34px;height:34px;border-radius:9px;background:var(--s2);border:1.5px solid var(--b2);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;color:var(--t2);line-height:1;flex-shrink:0}
+.bkbtn:hover{border-color:var(--red);color:var(--rl)}
+.ptitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:var(--t1)}
+.scroll{flex:1;overflow-y:auto}.scroll::-webkit-scrollbar{display:none}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--s1);border:1px solid var(--b2);border-radius:50px;padding:9px 18px;font-size:13px;font-weight:600;color:var(--t1);z-index:9999;opacity:0;transition:all .25s;white-space:nowrap;box-shadow:0 8px 28px rgba(0,0,0,.44);pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.loc-modal{position:absolute;inset:0;z-index:160;background:rgba(0,0,0,.76);display:flex;flex-direction:column;backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s}
+.loc-modal.show{opacity:1;pointer-events:all}
+.lm-hdr{background:var(--red);padding:12px 15px;display:flex;align-items:center;gap:10px;flex-shrink:0;position:relative;overflow:hidden}
+.lm-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 70% 90% at 95% 0%,rgba(255,255,255,.11),transparent)}
+.lm-close{width:31px;height:31px;border-radius:9px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#fff;position:relative;z-index:1;flex-shrink:0}
+.lm-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#fff;flex:1;position:relative;z-index:1}
+.lm-map{flex:1;position:relative}
+.crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-100%);z-index:20;font-size:30px;pointer-events:none;animation:pinPop 2.5s ease-in-out infinite;filter:drop-shadow(0 4px 10px rgba(196,30,58,.65))}
+@keyframes pinPop{0%,100%{transform:translate(-50%,-100%) translateY(0)}50%{transform:translate(-50%,-100%) translateY(-5px)}}
+.pin-hint{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);background:rgba(10,10,18,.88);border:1px solid var(--b2);border-radius:50px;padding:5px 12px;font-size:11px;font-weight:600;color:var(--t2);z-index:20;white-space:nowrap;pointer-events:none}
+.lm-foot{background:var(--s1);padding:10px 15px 18px;border-top:1px solid var(--b2);flex-shrink:0}
+.lm-near{font-size:11px;color:var(--t2);font-weight:600;margin-bottom:7px}
+.lm-near span{color:var(--rl)}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="phone">
+
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+  <!-- Location picker modal -->
+  <div class="loc-modal" id="loc-modal">
+    <div class="lm-hdr"><div class="lm-mesh"></div>
+      <div class="lm-close" onclick="document.getElementById('loc-modal').classList.remove('show')">✕</div>
+      <div class="lm-title">📍 Set Your Location</div>
+    </div>
+    <div class="lm-map"><div id="map-pin" class="ml"></div><div class="crosshair">📍</div><div class="pin-hint">Drag map to position pin</div></div>
+    <div class="lm-foot">
+      <div class="lm-near">Near: <span>Polangui Centro</span></div>
+      <button class="btn-r" onclick="document.getElementById('loc-modal').classList.remove('show');showToast('📍 Location confirmed!')">Confirm Location ✓</button>
+    </div>
+  </div>
+  <div class="topbar">
+    <div class="tb-mesh"></div>
+    <div class="tb-row">
+      <div><div class="tb-name">Hi, Juan! 👋</div><div class="tb-sub">Where to in Polangui today?</div></div>
+      <button class="tb-ico" onclick="showToast('→ Goes to Notifications')">🔔<div class="ndot"></div></button>
+    </div>
+    <div class="loc-row" onclick="openLocModal()">📍 <span class="loc-txt">Polangui Centro</span> ▾</div>
+  </div>
+  <div class="map-zone">
+    <div id="map-home" class="ml"></div>
+    <div class="np-pill"><div><div class="np-n">4</div><div class="np-l">Nearby</div></div><span style="font-size:20px">🛺</span></div>
+  </div>
+  <div class="bs">
+    <div class="pull"></div>
+    <div class="wb" onclick="showToast('→ Goes to Booking screen')"><div class="wb-i">🛺</div><div class="wb-t">Where are you going?</div><div class="wb-a">›</div></div>
+    <div class="chips">
+      <div class="chip"><div class="chip-i">💰</div><div><div class="chip-v">₱10–₱25</div><div class="chip-s">Est. fare</div></div></div>
+      <div class="chip"><div class="chip-i">⏱️</div><div><div class="chip-v">2–5 min</div><div class="chip-s">ETA</div></div></div>
+      <div class="chip"><div class="chip-i">🛺</div><div><div class="chip-v">4 Free</div><div class="chip-s">Drivers</div></div></div>
+    </div>
+    <div style="height:8px"></div>
+  </div>
+  <div class="bnav">
+    <button class="nb on"><div class="nb-box">🏠</div><div class="nb-lbl">Home</div></button>
+    <button class="nb" onclick="showToast('→ History')"><div class="nb-box">🕐</div><div class="nb-lbl">History</div></button>
+    <button class="nb" onclick="showToast('→ Notifications')"><div class="nb-box">🔔</div><div class="nb-lbl">Notifs</div></button>
+    <button class="nb" onclick="showToast('→ Profile')"><div class="nb-box">👤</div><div class="nb-lbl">Profile</div></button>
+  </div>
+</div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+let mHome=null,mPin=null;
+function mkIcon(e,sz){return L.divIcon({html:`<div style="font-size:${sz}px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))">${e}</div>`,iconAnchor:[sz/2,sz],className:''});}
+const CENTER=[13.2931,123.4879];
+function initHome(){
+  if(mHome)return;
+  mHome=L.map('map-home',{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false}).setView(CENTER,15);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(mHome);
+  L.marker(CENTER,{icon:mkIcon('📍',28),zIndexOffset:100}).addTo(mHome);
+  [[.0022,.0015],[-.0016,.0028],[.0008,-.0020],[-.0010,.0022]].forEach(([dlat,dlng])=>{L.marker([CENTER[0]+dlat,CENTER[1]+dlng],{icon:mkIcon('🛺',20)}).addTo(mHome);});
+}
+function openLocModal(){
+  document.getElementById('loc-modal').classList.add('show');
+  if(!mPin){
+    mPin=L.map('map-pin',{zoomControl:false,attributionControl:false}).setView(CENTER,16);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(mPin);
+  }
+  setTimeout(()=>{if(mPin)mPin.invalidateSize();},180);
+}
+window.addEventListener('load',()=>{setTimeout(initHome,300);});</script>
+</body>
+</html>

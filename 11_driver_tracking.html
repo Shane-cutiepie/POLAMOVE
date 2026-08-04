@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PolaMove — Driver Tracking</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--red:#C41E3A;--rl:#E0314F;--rd:#9B1830;--rg:rgba(196,30,58,.13);--rs:0 8px 32px rgba(196,30,58,.32);--bg:#0B0B10;--s1:#141419;--s2:#1C1C24;--s3:#24242E;--b1:rgba(255,255,255,.06);--b2:rgba(255,255,255,.11);--b3:rgba(255,255,255,.18);--t1:#F0F0F8;--t2:#9090B0;--t3:#50507A;--grn:#15803D;--grn2:#22C55E;--grn3:rgba(34,197,94,.13);--amber:#B45309;--r:12px;--rL:20px;--rXL:28px;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#05050A;font-family:'DM Sans',sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased;overflow:hidden}
+.wrap{display:flex;align-items:center;justify-content:center;width:100%;height:100vh}
+.phone{width:390px;min-width:390px;height:100vh;max-height:844px;position:relative;overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px rgba(255,255,255,.05),0 40px 120px rgba(0,0,0,.9)}
+@media(min-height:860px){.phone{border-radius:44px;height:844px}}
+.btn-r{width:100%;padding:14px;border:none;border-radius:var(--rL);background:linear-gradient(135deg,var(--rl),var(--red));color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:var(--rs)}
+.btn-r:hover{transform:translateY(-2px)}
+.ml{position:absolute;inset:0;z-index:0}
+.leaflet-control-container{display:none!important}
+.topbar{background:var(--red);padding:15px 18px 44px;position:relative;overflow:hidden;flex-shrink:0}
+.tb-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 70% 90% at 95% 0%,rgba(255,255,255,.11),transparent)}
+.tb-row{display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1}
+.tb-name{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff}
+.tb-sub{font-size:12px;color:rgba(255,255,255,.66);margin-top:2px}
+.tb-ico{width:37px;height:37px;border-radius:11px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex-shrink:0;position:relative}
+.ndot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:#FBBF24;border-radius:50%;border:1.5px solid var(--red)}
+.map-zone{flex:1;position:relative;margin-top:-22px}
+.np-pill{position:absolute;top:9px;right:9px;z-index:10;background:var(--s1);border:1.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;display:flex;align-items:center;gap:7px;pointer-events:none}
+.np-n{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--rl)}.np-l{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.3px}
+.bnav{background:var(--s1);border-top:1px solid rgba(255,255,255,.06);display:flex;padding:5px 0 18px;flex-shrink:0}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:3px}
+.nb-box{width:38px;height:27px;border-radius:50px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.nb.on .nb-box{background:var(--rg)}.nb-lbl{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.3px}
+.nb.on .nb-lbl{color:var(--rl)}
+.phdr{display:flex;align-items:center;gap:10px;padding:12px 15px;background:var(--s1);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
+.bkbtn{width:34px;height:34px;border-radius:9px;background:var(--s2);border:1.5px solid rgba(255,255,255,.11);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;color:var(--t2);line-height:1;flex-shrink:0}
+.ptitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:var(--t1)}
+.list-body{flex:1;overflow-y:auto}.list-body::-webkit-scrollbar{display:none}
+.hist-item{display:flex;align-items:center;gap:11px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04)}
+.hi-ico{width:38px;height:38px;border-radius:11px;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.hi-dest{font-size:13px;font-weight:600;color:var(--t1)}.hi-meta{font-size:11px;color:var(--t3);margin-top:2px}.hi-fare{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--grn2);margin-left:auto}
+.notif-item{display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04)}
+.npip{width:7px;height:7px;border-radius:50%;background:var(--rl);flex-shrink:0;margin-top:4px}.npip.r{background:var(--t3)}
+.prof-hero{background:var(--red);padding:26px 20px 44px;flex-shrink:0;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:5px}
+.ph-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 80% 100% at 100% 0%,rgba(255,255,255,.09),transparent)}
+.ph-ava{width:66px;height:66px;border-radius:50%;background:rgba(255,255,255,.16);border:3px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:28px;position:relative;z-index:1}
+.ph-nm{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:#fff;position:relative;z-index:1}
+.ph-rl{font-size:12px;color:rgba(255,255,255,.65);position:relative;z-index:1}
+.ph-stats{display:flex;gap:18px;margin-top:7px;position:relative;z-index:1}
+.ph-st{text-align:center}.ph-sv{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff}.ph-sk{font-size:10px;color:rgba(255,255,255,.58);text-transform:uppercase;letter-spacing:.4px}
+.msec{padding:12px 16px 0;background:var(--bg)}
+.msl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;margin-top:3px}
+.mrow{display:flex;align-items:center;gap:12px;padding:12px 13px;background:var(--s1);border-radius:var(--r);margin-bottom:6px;cursor:pointer;transition:all .16s;border:1px solid transparent}
+.mrow:hover{border-color:rgba(255,255,255,.11);background:var(--s2)}.mrow.danger:hover{border-color:rgba(196,30,58,.28);background:rgba(196,30,58,.05)}
+.mi{font-size:16px;width:20px;text-align:center}.ml{font-size:13px;font-weight:600;color:var(--t1)}.ma{font-size:15px;color:var(--t3);margin-left:auto}
+.mrow.danger .ml{color:var(--rl)}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--s1);border:1px solid rgba(255,255,255,.11);border-radius:50px;padding:9px 18px;font-size:13px;font-weight:600;color:var(--t1);z-index:9999;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.status-hdr{padding:13px 16px;flex-shrink:0;position:relative;overflow:hidden}
+.sh-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 70% 90% at 95% 0%,rgba(255,255,255,.1),transparent)}
+.sh-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff;position:relative;z-index:1}
+.sh-sub{font-size:12px;color:rgba(255,255,255,.68);position:relative;z-index:1;margin-top:2px}
+.track-wrap{flex:1;position:relative}
+.info-panel{background:var(--s1);border-radius:20px 20px 0 0;flex-shrink:0;border-top:1px solid rgba(255,255,255,.11)}
+.ip-pull{width:32px;height:3px;background:var(--s3);border-radius:3px;margin:9px auto 0}
+.drv-card{display:flex;align-items:center;gap:11px;padding:11px 15px 7px}
+.drv-ava{width:42px;height:42px;border-radius:50%;background:var(--s2);border:2.5px solid #60A5FA;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.drv-nm{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--t1)}
+.drv-tag{font-size:11px;color:var(--t2);margin-top:2px}
+.cbtns{display:flex;gap:6px;margin-left:auto}
+.cbtn{width:34px;height:34px;border-radius:9px;background:var(--s2);border:1.5px solid rgba(255,255,255,.11);display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer}
+.eta-row{display:flex;align-items:center;gap:10px;padding:7px 15px 4px}
+.eta-big{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;color:var(--rl)}
+.eta-unit{font-size:11px;color:var(--t2);font-weight:600}
+.eta-lbl{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px}
+.eta-dest{font-size:13px;font-weight:600;color:var(--t1);margin-top:2px}
+.drv-act{width:calc(100% - 30px);margin:6px 15px 14px;padding:13px;border:none;border-radius:var(--rL);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;display:block}
+.drv-act.nav{background:linear-gradient(135deg,#60A5FA,#2563EB);color:#fff}
+.drv-act.start{background:linear-gradient(135deg,#22C55E,#15803D);color:#fff}
+.drv-act.done{background:linear-gradient(135deg,var(--rl),var(--red));color:#fff}
+.step-toggle{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:999}
+.stg-btn{background:rgba(20,20,26,.92);border:1px solid rgba(255,255,255,.15);border-radius:50px;padding:7px 14px;color:var(--t1);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;cursor:pointer}
+.stg-btn.on{background:var(--red);border-color:var(--red)}
+
+</style>
+</head>
+<body>
+<div class="wrap"><div class="phone">
+
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+  <div class="status-hdr" id="dsh" style="background:var(--amber)">
+    <div class="sh-mesh"></div>
+    <div class="sh-title" id="dsh-title">Heading to Pickup</div>
+    <div class="sh-sub" id="dsh-sub">🗺️ Navigate to passenger</div>
+  </div>
+  <div class="track-wrap"><div id="map-drv" class="ml"></div></div>
+  <div class="info-panel">
+    <div class="ip-pull"></div>
+    <div class="drv-card">
+      <div class="drv-ava">🧍</div>
+      <div style="flex:1">
+        <div class="drv-nm" id="dp-name">Maria Santos</div>
+        <div class="drv-tag" id="dp-route">→ Polangui Public Market</div>
+        <div class="drv-tag" style="color:var(--rl)">Fare: <span id="dp-fare">₱20</span> · Cash</div>
+      </div>
+      <div class="cbtns"><div class="cbtn" onclick="showToast('📞 Calling passenger…')">📞</div><div class="cbtn" onclick="showToast('💬 Messaging…')">💬</div></div>
+    </div>
+    <div class="eta-row">
+      <div><div class="eta-big" id="deta-num">3</div><div class="eta-unit">min</div></div>
+      <div style="flex:1"><div class="eta-lbl" id="deta-lbl">HEADING TO PICKUP</div><div class="eta-dest" id="deta-dest">Polangui Centro</div></div>
+    </div>
+    <button class="drv-act nav" id="drv-act" onclick="nextStep()">🗺️ I've Arrived at Pickup</button>
+  </div>
+</div>
+<div class="step-toggle">
+  <div class="stg-btn on" onclick="setDriverStage(1)">1. To Pickup</div>
+  <div class="stg-btn" onclick="setDriverStage(2)">2. Arrived</div>
+  <div class="stg-btn" onclick="setDriverStage(3)">3. Trip</div>
+</div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+function mkIcon(e,sz){return L.divIcon({html:`<div style="font-size:${sz}px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))">${e}</div>`,iconAnchor:[sz/2,sz],className:''});}
+function mkTrike(sz){return L.divIcon({html:`<div style="font-size:${sz}px;line-height:1;filter:drop-shadow(0 2px 8px rgba(196,30,58,.7))">${sz>22?'🛺':'🛺'}</div>`,iconAnchor:[sz/2,sz],className:''});}
+function tiles(m){L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(m);}
+
+const CENTER=[13.2931,123.4879];
+const PU={lat:13.2931,lng:123.4879};
+const DE={lat:13.2935,lng:123.4910};
+let mDrv=null,drvTrike=null,dStep=1;
+window.addEventListener('load',()=>{
+  mDrv=L.map('map-drv',{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false}).setView(CENTER,15);
+  tiles(mDrv);
+  drvTrike=L.marker([CENTER[0]+.002,CENTER[1]-.002],{icon:mkTrike(26),zIndexOffset:200}).addTo(mDrv);
+  L.marker([PU.lat,PU.lng],{icon:mkIcon('📍',24)}).addTo(mDrv);
+  setTimeout(()=>mDrv.invalidateSize(),200);
+});
+const DSTAGES={
+  1:{bg:'var(--amber)',title:'Heading to Pickup',sub:'🗺️ Navigate to passenger',etaLbl:'HEADING TO PICKUP',etaDest:'Polangui Centro',etaNum:'3',act:'🗺️ I've Arrived at Pickup',cls:'nav',trLat:CENTER[0]+.001,trLng:CENTER[1]-.001},
+  2:{bg:'var(--grn)',title:'Arrived at Pickup 📍',sub:'Waiting for passenger to board',etaLbl:'PASSENGER BOARDING',etaDest:'Polangui Centro',etaNum:'0',act:'🚀 Start Trip',cls:'start',trLat:PU.lat,trLng:PU.lng},
+  3:{bg:'var(--grn)',title:'Trip in Progress 🏁',sub:'Driving to destination',etaLbl:'HEADING TO DESTINATION',etaDest:'Polangui Public Market',etaNum:'5',act:'✅ Complete Trip',cls:'done',trLat:(PU.lat+DE.lat)/2,trLng:(PU.lng+DE.lng)/2},
+};
+function setDriverStage(n){
+  dStep=n;const s=DSTAGES[n];
+  document.getElementById('dsh').style.background=s.bg;
+  document.getElementById('dsh-title').textContent=s.title;
+  document.getElementById('dsh-sub').textContent=s.sub;
+  document.getElementById('deta-lbl').textContent=s.etaLbl;
+  document.getElementById('deta-dest').textContent=s.etaDest;
+  document.getElementById('deta-num').textContent=s.etaNum;
+  const btn=document.getElementById('drv-act');btn.textContent=s.act;btn.className='drv-act '+s.cls;
+  if(drvTrike)drvTrike.setLatLng([s.trLat,s.trLng]);
+  document.querySelectorAll('.stg-btn').forEach((b,i)=>b.classList.toggle('on',i+1===n));
+}
+function nextStep(){if(dStep<3)setDriverStage(dStep+1);else showToast('🎉 Trip done! +₱20 earned → Home');}
+</script>
+</body>
+</html>

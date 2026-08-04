@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PolaMove — Auth — Passenger</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#C41E3A;--rl:#E0314F;--rd:#9B1830;
+  --rg:rgba(196,30,58,.13);--rs:0 8px 32px rgba(196,30,58,.32);
+  --bg:#0B0B10;--s1:#141419;--s2:#1C1C24;--s3:#24242E;
+  --b1:rgba(255,255,255,.06);--b2:rgba(255,255,255,.11);--b3:rgba(255,255,255,.18);
+  --t1:#F0F0F8;--t2:#9090B0;--t3:#50507A;
+  --grn:#15803D;--grn2:#22C55E;--grn3:rgba(34,197,94,.13);
+  --amber:#B45309;--r:12px;--rL:20px;--rXL:28px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;background:#05050A;font-family:'DM Sans',sans-serif;color:var(--t1);-webkit-font-smoothing:antialiased;overflow:hidden}
+.wrap{display:flex;align-items:center;justify-content:center;width:100%;height:100vh}
+.phone{width:390px;min-width:390px;height:100vh;max-height:844px;position:relative;overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px rgba(255,255,255,.05),0 40px 120px rgba(0,0,0,.9)}
+@media(min-height:860px){.phone{border-radius:44px;height:844px}}
+.logo{display:inline-flex;align-items:center;font-family:'Syne',sans-serif;font-weight:800;gap:1px}
+.lw{display:inline-flex;align-items:center;justify-content:center}
+.btn-r{width:100%;padding:14px;border:none;border-radius:var(--rL);background:linear-gradient(135deg,var(--rl),var(--red));color:#fff;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:var(--rs);letter-spacing:.3px}
+.btn-r:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(196,30,58,.38)}.btn-r:active{transform:none}
+.btn-g{width:100%;padding:12px;border:1.5px solid var(--b2);border-radius:var(--rL);background:none;color:var(--t2);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s}
+.btn-g:hover{border-color:var(--rl);color:var(--rl)}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fl{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.7px}
+.fi{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--r);padding:12px 13px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--t1);outline:none;transition:border-color .18s,box-shadow .18s;-webkit-appearance:none}
+.fi::placeholder{color:var(--t3)}.fi:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(196,30,58,.1)}
+.fi-w{position:relative}.eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:14px;cursor:pointer;color:var(--t3)}
+.fr{display:flex;gap:8px}.fr .fg{flex:1}
+.hint{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);padding:9px 12px;font-size:12px;color:var(--t2);text-align:center}.hint b{color:var(--rl)}
+.sdots{display:flex;gap:5px;align-items:center;justify-content:center}
+.sd{height:3px;width:16px;border-radius:3px;background:var(--s2);transition:all .28s}.sd.on{width:26px;background:var(--red)}.sd.dn{background:var(--rd)}
+.slbl{font-size:11px;color:var(--t3);text-align:center;font-weight:500}
+.ah{background:var(--red);padding:0 22px 46px;flex-shrink:0;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center}
+.ah-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 80% 100% at 100% 0%,rgba(255,255,255,.11),transparent)}
+.ah-badge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,.62);letter-spacing:3px;text-transform:uppercase;position:relative;z-index:2;margin-top:3px}
+.tabs{display:flex;background:rgba(255,255,255,.14);border-radius:50px;padding:4px;margin-bottom:17px;position:relative;z-index:2;width:100%;margin-top:13px}
+.tab{flex:1;padding:9px;border-radius:50px;border:none;background:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:rgba(255,255,255,.58);cursor:pointer;transition:all .2s}
+.tab.on{background:#fff;color:var(--red);box-shadow:0 2px 10px rgba(0,0,0,.17)}
+.ab{flex:1;overflow-y:auto;background:var(--bg);padding:22px 20px 32px;display:flex;flex-direction:column;gap:12px;margin-top:-22px;border-radius:22px 22px 0 0}
+.ab::-webkit-scrollbar{display:none}
+.topbar{background:var(--red);padding:15px 18px 44px;position:relative;overflow:hidden;flex-shrink:0}
+.tb-mesh{position:absolute;inset:0;background:radial-gradient(ellipse 70% 90% at 95% 0%,rgba(255,255,255,.11),transparent)}
+.tb-row{display:flex;align-items:flex-start;justify-content:space-between;position:relative;z-index:1}
+.tb-name{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff}
+.tb-sub{font-size:12px;color:rgba(255,255,255,.66);margin-top:2px}
+.tb-ico{width:37px;height:37px;border-radius:11px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex-shrink:0;position:relative}
+.ndot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:#FBBF24;border-radius:50%;border:1.5px solid var(--red)}
+.loc-row{position:relative;z-index:1;margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:50px;padding:6px 12px;cursor:pointer;max-width:100%}
+.loc-txt{font-size:12px;color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:195px}
+.map-zone{flex:1;position:relative;margin-top:-22px}
+.ml{position:absolute;inset:0;z-index:0}
+.leaflet-control-container{display:none!important}
+.np-pill{position:absolute;top:9px;right:9px;z-index:10;background:var(--s1);border:1.5px solid var(--b2);border-radius:var(--r);padding:7px 11px;display:flex;align-items:center;gap:7px;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.np-n{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:var(--rl)}.np-l{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.3px}
+.bs{background:var(--s1);border-radius:22px 22px 0 0;flex-shrink:0;border-top:1px solid var(--b2);box-shadow:0 -6px 28px rgba(0,0,0,.36);padding:0 15px 3px}
+.pull{width:34px;height:3.5px;background:var(--s3);border-radius:3px;margin:10px auto 13px}
+.wb{width:100%;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--rL);padding:11px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .18s}
+.wb:hover{border-color:var(--red)}
+.wb-i{font-size:16px}.wb-t{flex:1;font-size:13px;color:var(--t3);font-weight:500}.wb-a{font-size:17px;color:var(--rl)}
+.chips{display:flex;gap:6px;margin-top:8px}
+.chip{flex:1;background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:7px 8px;display:flex;align-items:center;gap:6px}
+.chip-i{font-size:13px}.chip-v{font-size:11px;font-weight:700;color:var(--t1)}.chip-s{font-size:9px;color:var(--t3)}
+.bnav{background:var(--s1);border-top:1px solid var(--b1);display:flex;padding:5px 0 18px;flex-shrink:0}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:3px}
+.nb-box{width:38px;height:27px;border-radius:50px;display:flex;align-items:center;justify-content:center;font-size:17px;transition:all .25s}
+.nb.on .nb-box{background:var(--rg)}.nb-lbl{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.3px}
+.nb.on .nb-lbl{color:var(--rl)}
+.phdr{display:flex;align-items:center;gap:10px;padding:12px 15px;background:var(--s1);border-bottom:1px solid var(--b1);flex-shrink:0}
+.bkbtn{width:34px;height:34px;border-radius:9px;background:var(--s2);border:1.5px solid var(--b2);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;color:var(--t2);line-height:1;flex-shrink:0}
+.bkbtn:hover{border-color:var(--red);color:var(--rl)}
+.ptitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:var(--t1)}
+.scroll{flex:1;overflow-y:auto}.scroll::-webkit-scrollbar{display:none}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--s1);border:1px solid var(--b2);border-radius:50px;padding:9px 18px;font-size:13px;font-weight:600;color:var(--t1);z-index:9999;opacity:0;transition:all .25s;white-space:nowrap;box-shadow:0 8px 28px rgba(0,0,0,.44);pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+#auth-p{display:flex;flex-direction:column;position:absolute;inset:0}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="phone">
+
+<div id="auth-p" style="display:flex;flex-direction:column">
+  <div class="ah">
+    <div class="ah-mesh"></div>
+    <div class="tabs">
+      <button class="tab on" id="pt-su" onclick="switchTab('su')">Sign Up</button>
+      <button class="tab" id="pt-li" onclick="switchTab('li')">Log In</button>
+    </div>
+    <div class="logo" style="font-size:25px;color:#fff"><span>P</span><span>o</span><span>l</span><span>a</span><span></span>M</span><span class="lw" style="width:.68em;height:.68em;margin:0 1px"><svg width="100%" height="100%" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="16" stroke="white" stroke-width="2.5"/><circle cx="18" cy="18" r="4.5" fill="white"/><line x1="18" y1="2" x2="18" y2="13.5" stroke="white" stroke-width="1.6"/><line x1="18" y1="22.5" x2="18" y2="34" stroke="white" stroke-width="1.6"/><line x1="2" y1="18" x2="13.5" y2="18" stroke="white" stroke-width="1.6"/><line x1="22.5" y1="18" x2="34" y2="18" stroke="white" stroke-width="1.6"/><line x1="5.4" y1="5.4" x2="13.4" y2="13.4" stroke="white" stroke-width="1.6"/><line x1="22.6" y1="22.6" x2="30.6" y2="30.6" stroke="white" stroke-width="1.6"/><line x1="30.6" y1="5.4" x2="22.6" y2="13.4" stroke="white" stroke-width="1.6"/><line x1="13.4" y1="22.6" x2="5.4" y2="30.6" stroke="white" stroke-width="1.6"/></svg></span><span>v</span><span>e</span></div>
+    <div class="ah-badge">Passenger</div>
+  </div>
+  <div class="ab" id="p-su">
+    <div class="fr">
+      <div class="fg"><div class="fl">First Name</div><input class="fi" placeholder="Maria"></div>
+      <div class="fg"><div class="fl">Last Name</div><input class="fi" placeholder="Santos"></div>
+    </div>
+    <div class="fg"><div class="fl">Phone</div><input class="fi" type="tel" placeholder="09XX XXX XXXX"></div>
+    <div class="fg"><div class="fl">Password</div>
+      <div class="fi-w"><input class="fi" id="ps-pw" type="password" placeholder="Create password" style="padding-right:40px">
+      <button class="eye" onclick="tpw('ps-pw',this)">👁️</button></div>
+    </div>
+    <button class="btn-r" onclick="window.location.href='07_home_passenger.html'">Create Account →</button>
+    <button class="btn-g" onclick="window.location.href='02_role_select.html'">← Back</button>
+  </div>
+  <div class="ab" id="p-li" style="display:none">
+    <div class="fg"><div class="fl">Phone</div><input class="fi" type="tel" placeholder="09XX XXX XXXX"></div>
+    <div class="fg"><div class="fl">Password</div>
+      <div class="fi-w"><input class="fi" type="password" placeholder="Your password" style="padding-right:40px"></div>
+    </div>
+    <button class="btn-r" onclick="window.location.href='07_home_passenger.html'">Log In →</button>
+    <button class="btn-g" onclick="window.location.href='02_role_select.html'">← Back</button>
+  </div>
+</div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+function tpw(id,btn){const i=document.getElementById(id);i.type=i.type==='password'?'text':'password';btn.textContent=i.type==='password'?'👁️':'🙈';}
+function switchTab(t){
+  if(t==='su'){document.getElementById('p-su').style.display='flex';document.getElementById('p-li').style.display='none';document.getElementById('pt-su').classList.add('on');document.getElementById('pt-li').classList.remove('on');}
+  else{document.getElementById('p-su').style.display='none';document.getElementById('p-li').style.display='flex';document.getElementById('pt-su').classList.remove('on');document.getElementById('pt-li').classList.add('on');}
+}</script>
+</body>
+</html>
