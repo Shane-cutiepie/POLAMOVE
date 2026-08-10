@@ -1,8 +1,7 @@
 /// Form validation for PolaMove.
 ///
 /// Every function returns `null` when the value is valid, or an error message
-/// string when it isn't. This matches Flutter's TextFormField validator
-/// signature, so these can be dropped into a Form later if needed.
+/// string when it isn't.
 class Validators {
   Validators._();
 
@@ -25,6 +24,25 @@ class Validators {
     return null;
   }
 
+  // ── Email ──────────────────────────────────────────
+  static String? email(String? value) {
+    final base = required(value, 'Email');
+    if (base != null) return base;
+    if (!isEmail(value!)) {
+      return 'Enter a valid email address';
+    }
+    return null;
+  }
+
+  /// True when the string looks like an email rather than a phone number.
+  /// Used at login to decide how to resolve the identifier.
+  static bool isEmail(String value) {
+    return RegExp(r'^[\w\.\-\+]+@[\w\-]+(\.[\w\-]+)+$').hasMatch(value.trim());
+  }
+
+  static String normalizeEmail(String raw) => raw.trim().toLowerCase();
+
+  // ── Phone ──────────────────────────────────────────
   /// Accepts Philippine mobile formats: 09XXXXXXXXX, +639XXXXXXXXX,
   /// 639XXXXXXXXX — with or without spaces and dashes.
   static String? phone(String? value) {
@@ -47,6 +65,19 @@ class Validators {
     return digits;
   }
 
+  /// Login accepts either an email address or a phone number.
+  static String? loginIdentifier(String? value) {
+    final base = required(value, 'Email or phone number');
+    if (base != null) return base;
+    if (isEmail(value!)) return null;
+    final digits = normalizePhone(value);
+    if (digits.length != 11 || !digits.startsWith('09')) {
+      return 'Enter a valid email or PH mobile number';
+    }
+    return null;
+  }
+
+  // ── Password ───────────────────────────────────────
   static String? password(String? value) {
     final base = required(value, 'Password');
     if (base != null) return base;
@@ -56,6 +87,7 @@ class Validators {
     return null;
   }
 
+  // ── Misc fields ────────────────────────────────────
   static String? dropdown(String? value, String fieldName) {
     if (value == null || value.isEmpty) {
       return 'Please select a $fieldName';
@@ -70,9 +102,9 @@ class Validators {
     return null;
   }
 
-  /// Philippine plate numbers vary (ABC 1234, ABC 123, 1234 AB, TODA body
-  /// numbers). Kept permissive on purpose — rejecting a valid local plate is
-  /// worse than accepting an odd one.
+  /// Philippine plate numbers vary (ABC 1234, ABC 123, TODA body numbers).
+  /// Kept permissive on purpose — rejecting a valid local plate is worse than
+  /// accepting an odd one.
   static String? plateNumber(String? value) {
     final base = required(value, 'Plate number');
     if (base != null) return base;
@@ -92,11 +124,5 @@ class Validators {
       return 'Enter a valid license number';
     }
     return null;
-  }
-
-  /// Converts a phone number into the synthetic email used for Firebase Auth.
-  /// The user never sees this — they log in with their phone number.
-  static String phoneToEmail(String phone) {
-    return '${normalizePhone(phone)}@polamove.app';
   }
 }

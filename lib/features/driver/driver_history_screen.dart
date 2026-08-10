@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/ride_service.dart';
 
 enum RideTypeFilter { all, solo, share, rent }
 
@@ -16,6 +18,7 @@ class _RideRecord {
   final double surcharge;
   final int seats; // relevant for PolaShare
   final double hours; // relevant for PolaRent
+  final double totalFare;
 
   const _RideRecord({
     required this.passengerName,
@@ -26,21 +29,14 @@ class _RideRecord {
     required this.date,
     required this.baseFare,
     required this.surcharge,
+    required this.totalFare,
     this.seats = 1,
     this.hours = 0,
   });
 
-  double get total {
-    switch (type) {
-      case RideTypeFilter.share:
-        return baseFare * seats;
-      case RideTypeFilter.rent:
-        return baseFare * hours;
-      case RideTypeFilter.solo:
-      case RideTypeFilter.all:
-        return baseFare + surcharge;
-    }
-  }
+  /// The fare the passenger was quoted at booking time, rather than a
+  /// recomputation that could drift from what was actually charged.
+  double get total => totalFare;
 
   String get typeLabel {
     switch (type) {
@@ -56,62 +52,13 @@ class _RideRecord {
   }
 }
 
-// TODO: Firebase - replace with Firestore query on driver's ride history
-final List<_RideRecord> _mockHistory = [
-  _RideRecord(
-    passengerName: 'Juan Dela Cruz',
-    pickup: 'Polangui Public Market',
-    dropoff: 'Brgy. Oras',
-    type: RideTypeFilter.solo,
-    status: RideStatus.completed,
-    date: DateTime(2026, 8, 3, 14, 20),
-    baseFare: 15,
-    surcharge: 5,
-  ),
-  _RideRecord(
-    passengerName: 'Maria Santos',
-    pickup: 'Bicol University Polangui',
-    dropoff: 'Poblacion',
-    type: RideTypeFilter.share,
-    status: RideStatus.completed,
-    date: DateTime(2026, 8, 3, 9, 5),
-    baseFare: 12,
-    surcharge: 0,
-    seats: 3,
-  ),
-  _RideRecord(
-    passengerName: 'Carlos Reyes',
-    pickup: 'Brgy. Ilawod',
-    dropoff: 'Round trip — town proper',
-    type: RideTypeFilter.rent,
-    status: RideStatus.completed,
-    date: DateTime(2026, 8, 2, 16, 40),
-    baseFare: 60,
-    surcharge: 0,
-    hours: 2,
-  ),
-  _RideRecord(
-    passengerName: 'Ana Villareal',
-    pickup: 'Brgy. Quirangay',
-    dropoff: 'Polangui Terminal',
-    type: RideTypeFilter.solo,
-    status: RideStatus.cancelled,
-    date: DateTime(2026, 8, 1, 11, 15),
-    baseFare: 15,
-    surcharge: 0,
-  ),
-  _RideRecord(
-    passengerName: 'Pedro Lim',
-    pickup: 'Brgy. Tandarora',
-    dropoff: 'Polangui Public Market',
-    type: RideTypeFilter.share,
-    status: RideStatus.completed,
-    date: DateTime(2026, 7, 31, 18, 0),
-    baseFare: 12,
-    surcharge: 0,
-    seats: 2,
-  ),
-];
+RideTypeFilter _typeFromRide(dynamic rideType) {
+  switch (rideType) {
+    case 'PolaShare': return RideTypeFilter.share;
+    case 'PolaRent':  return RideTypeFilter.rent;
+    default:          return RideTypeFilter.solo;
+  }
+}
 
 class DriverHistoryScreen extends StatefulWidget {
   const DriverHistoryScreen({super.key});
@@ -123,19 +70,60 @@ class DriverHistoryScreen extends StatefulWidget {
 class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
   RideTypeFilter _filter = RideTypeFilter.all;
 
-  List<_RideRecord> get _filtered {
-    if (_filter == RideTypeFilter.all) return _mockHistory;
-    return _mockHistory.where((r) => r.type == _filter).toList();
+  // Passenger names, resolved once per uid so a long list doesn't re-read
+  // users/{uid} on every rebuild.
+  final Map<String, String> _names = {};
+
+  Future<void> _resolveNames(Iterable<String> passengerIds) async {
+    final missing =
+        passengerIds.where((id) => !_names.containsKey(id)).toSet();
+    if (missing.isEmpty) return;
+
+    for (final id in missing) {
+      _names[id] = '—'; // claim the slot so we don't fetch it twice
+      final user = await RideService.userInfo(id);
+      final name =
+          '${user?['firstName'] ?? ''} ${user?['lastName'] ?? ''}'.trim();
+      if (name.isNotEmpty) _names[id] = name;
+    }
+    if (mounted) setState(() {});
   }
 
-  double get _totalEarnings => _mockHistory
-      .where((r) => r.status == RideStatus.completed)
-      .fold(0.0, (sum, r) => sum + r.total);
+  /// Only finished rides belong in history — an accepted or ongoing ride is
+  /// still on the tracking screen.
+  _RideRecord? _toRecord(Map<String, dynamic> ride) {
+    final RideStatus status;
+    switch (ride['status']) {
+      case 'completed':
+        status = RideStatus.completed;
+        break;
+      case 'cancelled':
+        status = RideStatus.cancelled;
+        break;
+      default:
+        return null;
+    }
+
+    final requestedAt = ride['requestedAt'];
+    final passengerId = ride['passengerId'] as String?;
+
+    return _RideRecord(
+      passengerName: passengerId == null ? '—' : (_names[passengerId] ?? '—'),
+      pickup: ride['pickup']?['name'] ?? '—',
+      dropoff: ride['dropoff']?['name'] ?? '—',
+      type: _typeFromRide(ride['rideType']),
+      status: status,
+      date: requestedAt is Timestamp ? requestedAt.toDate() : DateTime.now(),
+      baseFare: (ride['baseFare'] ?? 0).toDouble(),
+      surcharge: (ride['surcharge'] ?? 0).toDouble(),
+      totalFare: (ride['totalFare'] ?? 0).toDouble(),
+      seats: (ride['seats'] ?? 1).toInt(),
+      hours: (ride['hours'] ?? 0).toDouble(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final records = _filtered;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -151,24 +139,57 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          _EarningsSummary(total: _totalEarnings),
-          _FilterRow(
-            selected: _filter,
-            onSelect: (f) => setState(() => _filter = f),
-          ),
-          Expanded(
-            child: records.isEmpty
-                ? const _EmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    itemCount: records.length,
-                    itemBuilder: (context, index) =>
-                        _HistoryCard(record: records[index]),
-                  ),
-          ),
-        ],
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: RideService.driverHistory(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(color: AppColors.primary));
+          }
+
+          final docs = snapshot.data!.docs;
+          final ids = docs
+              .map((d) => d.data()['passengerId'] as String?)
+              .whereType<String>();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _resolveNames(ids);
+          });
+
+          final history = docs
+              .map((d) => _toRecord(d.data()))
+              .whereType<_RideRecord>()
+              .toList();
+
+          // Filtering happens here rather than in the query, so switching
+          // chips costs nothing.
+          final records = _filter == RideTypeFilter.all
+              ? history
+              : history.where((r) => r.type == _filter).toList();
+
+          final totalEarnings = history
+              .where((r) => r.status == RideStatus.completed)
+              .fold(0.0, (acc, r) => acc + r.total);
+
+          return Column(
+            children: [
+              _EarningsSummary(total: totalEarnings),
+              _FilterRow(
+                selected: _filter,
+                onSelect: (f) => setState(() => _filter = f),
+              ),
+              Expanded(
+                child: records.isEmpty
+                    ? const _EmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        itemCount: records.length,
+                        itemBuilder: (context, index) =>
+                            _HistoryCard(record: records[index]),
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -21,6 +21,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
   final _fnCtrl = TextEditingController();
   final _lnCtrl = TextEditingController();
   final _phCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
 
   // Log In controllers
@@ -32,6 +33,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
       _errors['firstName'] = Validators.name(_fnCtrl.text, 'First name');
       _errors['lastName'] = Validators.name(_lnCtrl.text, 'Last name');
       _errors['phone'] = Validators.phone(_phCtrl.text);
+      _errors['email'] = Validators.email(_emailCtrl.text);
       _errors['password'] = Validators.password(_pwCtrl.text);
     });
     return _errors.values.every((e) => e == null);
@@ -45,6 +47,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
         firstName: _fnCtrl.text,
         lastName: _lnCtrl.text,
         phone: _phCtrl.text,
+        email: _emailCtrl.text,
         password: _pwCtrl.text,
       );
       if (!mounted) return;
@@ -58,9 +61,18 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
   }
 
   Future<void> _submitLogIn() async {
+    setState(() {
+      _errors['liPhone'] = Validators.loginIdentifier(_liPhCtrl.text);
+      _errors['liPassword'] = Validators.required(_liPwCtrl.text, 'Password');
+    });
+    if (_errors['liPhone'] != null || _errors['liPassword'] != null) return;
+
     setState(() => _isSubmitting = true);
     try {
-      await AuthService.logIn(phone: _liPhCtrl.text, password: _liPwCtrl.text);
+      await AuthService.logIn(
+        identifier: _liPhCtrl.text,
+        password: _liPwCtrl.text,
+      );
       if (!mounted) return;
       _goToHome();
     } on AuthException catch (e) {
@@ -76,6 +88,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
     _fnCtrl.dispose();
     _lnCtrl.dispose();
     _phCtrl.dispose();
+    _emailCtrl.dispose();
     _pwCtrl.dispose();
     _liPhCtrl.dispose();
     _liPwCtrl.dispose();
@@ -195,6 +208,9 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
         _FormField(label: 'Phone', controller: _phCtrl, placeholder: '09XX XXX XXXX',
             keyboardType: TextInputType.phone, errorText: _errors['phone']),
         const SizedBox(height: 12),
+        _FormField(label: 'Email', controller: _emailCtrl, placeholder: 'maria@email.com',
+            keyboardType: TextInputType.emailAddress, errorText: _errors['email']),
+        const SizedBox(height: 12),
         _FormField(label: 'Password', controller: _pwCtrl, placeholder: 'Create password',
             obscure: _obscurePassword,
             onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -212,12 +228,14 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FormField(label: 'Phone', controller: _liPhCtrl, placeholder: '09XX XXX XXXX',
-            keyboardType: TextInputType.phone),
+        _FormField(label: 'Email or Phone Number', controller: _liPhCtrl,
+            placeholder: 'maria@email.com or 09XX XXX XXXX',
+            errorText: _errors['liPhone']),
         const SizedBox(height: 12),
         _FormField(label: 'Password', controller: _liPwCtrl, placeholder: 'Your password',
             obscure: _obscurePassword,
-            onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword)),
+            onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
+            errorText: _errors['liPassword']),
         const SizedBox(height: 20),
         _PrimaryButton(label: _isSubmitting ? 'Logging In…' : 'Log In →',
             onTap: _isSubmitting ? null : _submitLogIn),

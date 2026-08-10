@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/polangui_barangays.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/utils/validators.dart';
 import '../driver/driver_home_screen.dart';
 
 class AuthDriverScreen extends StatefulWidget {
@@ -16,12 +19,15 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
   bool _isSignUp = true;
   int _step = 1;
   bool _obscurePassword = true;
+  bool _isSubmitting = false;
+  final Map<String, String?> _errors = {};
 
   // Step 1
   final _fnCtrl = TextEditingController();
   final _lnCtrl = TextEditingController();
   final _dobCtrl = TextEditingController();
   final _phCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
   String? _selectedBarangay;
 
@@ -43,15 +49,6 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
 
   final ImagePicker _picker = ImagePicker();
 
-  final List<String> _barangays = [
-    'Barangay 1 (Pob.)', 'Barangay 2 (Pob.)', 'Barangay 3 (Pob.)',
-    'Barangay 4 (Pob.)', 'Barangay 5 (Pob.)', 'Aniog', 'Busac',
-    'Cararayan', 'Doña Tomasa', 'Itaran', 'La Purisima', 'Lanigay',
-    'Lidong', 'Lourdes', 'Magpanambo', 'Magurang', 'Napo', 'Ponso',
-    'Sabang', 'San Francisco', 'San Isidro', 'San Miguel', 'San Vicente',
-    'Santa Cruz', 'Santicon', 'Yapad',
-  ];
-
   final List<String> _routes = [
     'Centro – Public Market', 'Centro – Bus Terminal',
     'Centro – Bicol University', 'Centro – Hospital', 'All Routes',
@@ -60,17 +57,105 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
   @override
   void dispose() {
     _fnCtrl.dispose(); _lnCtrl.dispose(); _dobCtrl.dispose();
-    _phCtrl.dispose(); _pwCtrl.dispose(); _plateCtrl.dispose();
+    _phCtrl.dispose(); _emailCtrl.dispose(); _pwCtrl.dispose(); _plateCtrl.dispose();
     _licCtrl.dispose(); _licExpCtrl.dispose();
     _liPhCtrl.dispose(); _liPwCtrl.dispose();
     super.dispose();
   }
 
-  void _goToHome() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
-      (route) => false,
-    );
+  bool _validateStep1() {
+    setState(() {
+      _errors['firstName'] = Validators.name(_fnCtrl.text, 'First name');
+      _errors['lastName'] = Validators.name(_lnCtrl.text, 'Last name');
+      _errors['dateOfBirth'] = Validators.date(_dobCtrl.text, 'Date of birth');
+      _errors['phone'] = Validators.phone(_phCtrl.text);
+      _errors['email'] = Validators.email(_emailCtrl.text);
+      _errors['barangay'] = Validators.dropdown(_selectedBarangay, 'barangay');
+      _errors['password'] = Validators.password(_pwCtrl.text);
+    });
+    return ['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'barangay', 'password']
+        .every((key) => _errors[key] == null);
+  }
+
+  bool _validateStep2() {
+    setState(() {
+      _errors['plateNo'] = Validators.plateNumber(_plateCtrl.text);
+      _errors['licenseNo'] = Validators.licenseNumber(_licCtrl.text);
+      _errors['licenseExpiry'] = Validators.date(_licExpCtrl.text, 'License expiry date');
+      _errors['preferredRoute'] = Validators.dropdown(_selectedRoute, 'route');
+    });
+    return ['plateNo', 'licenseNo', 'licenseExpiry', 'preferredRoute']
+        .every((key) => _errors[key] == null);
+  }
+
+  bool _validateStep3() {
+    if (_licensePhoto == null || _orcrPhoto == null || _brgyPhoto == null) {
+      _showError('Please upload all required documents');
+      return false;
+    }
+    return true;
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _submitApplication() async {
+    if (!_validateStep3()) return;
+    setState(() => _isSubmitting = true);
+    try {
+      await AuthService.signUpDriver(
+        firstName: _fnCtrl.text,
+        lastName: _lnCtrl.text,
+        dateOfBirth: _dobCtrl.text,
+        phone: _phCtrl.text,
+        email: _emailCtrl.text,
+        barangay: _selectedBarangay!,
+        password: _pwCtrl.text,
+        plateNo: _plateCtrl.text,
+        licenseNo: _licCtrl.text,
+        licenseExpiry: _licExpCtrl.text,
+        preferredRoute: _selectedRoute!,
+        licensePhoto: _licensePhoto!,
+        orcrPhoto: _orcrPhoto!,
+        barangayClearancePhoto: _brgyPhoto!,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _logIn() async {
+    setState(() {
+      _errors['liPhone'] = Validators.loginIdentifier(_liPhCtrl.text);
+      _errors['liPassword'] = Validators.required(_liPwCtrl.text, 'Password');
+    });
+    if (_errors['liPhone'] != null || _errors['liPassword'] != null) return;
+
+    setState(() => _isSubmitting = true);
+    try {
+      await AuthService.logIn(
+        identifier: _liPhCtrl.text,
+        password: _liPwCtrl.text,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (mounted) _showError(e.message);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   Future<void> _showPickerSheet(Function(File) onPicked) async {
@@ -218,12 +303,15 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       const _StepLabel('Personal Information'),
       const SizedBox(height: 18),
       Row(children: [
-        Expanded(child: _FormField(label: 'First Name', controller: _fnCtrl, placeholder: 'Carlos')),
+        Expanded(child: _FormField(label: 'First Name', controller: _fnCtrl, placeholder: 'Carlos',
+            errorText: _errors['firstName'])),
         const SizedBox(width: 8),
-        Expanded(child: _FormField(label: 'Last Name', controller: _lnCtrl, placeholder: 'Reyes')),
+        Expanded(child: _FormField(label: 'Last Name', controller: _lnCtrl, placeholder: 'Reyes',
+            errorText: _errors['lastName'])),
       ]),
       const SizedBox(height: 12),
       _DateField(label: 'Date of Birth', controller: _dobCtrl, placeholder: 'MM/DD/YYYY',
+        errorText: _errors['dateOfBirth'],
         onTap: () async {
           final picked = await showDatePicker(context: context,
             initialDate: DateTime(1990), firstDate: DateTime(1950),
@@ -236,17 +324,25 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       ),
       const SizedBox(height: 12),
       _FormField(label: 'Phone Number', controller: _phCtrl, placeholder: '09XX XXX XXXX',
-          keyboardType: TextInputType.phone),
+          keyboardType: TextInputType.phone, errorText: _errors['phone']),
+      const SizedBox(height: 12),
+      _FormField(label: 'Email Address', controller: _emailCtrl,
+          placeholder: 'juan@email.com',
+          keyboardType: TextInputType.emailAddress,
+          errorText: _errors['email']),
       const SizedBox(height: 12),
       _DropdownField<String>(label: 'Barangay', value: _selectedBarangay,
-          placeholder: 'Select barangay…', items: _barangays, itemLabel: (e) => e,
-          onChanged: (val) => setState(() => _selectedBarangay = val)),
+          placeholder: 'Select barangay…', items: kPolanguiBarangays, itemLabel: (e) => e,
+          onChanged: (val) => setState(() => _selectedBarangay = val),
+          errorText: _errors['barangay']),
       const SizedBox(height: 12),
       _FormField(label: 'Password', controller: _pwCtrl, placeholder: 'Create password',
           obscure: _obscurePassword,
-          onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword)),
+          onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
+          errorText: _errors['password']),
       const SizedBox(height: 22),
-      _PrimaryButton(label: 'Continue →', onTap: () => setState(() => _step = 2)),
+      _PrimaryButton(label: 'Continue →',
+          onTap: () { if (_validateStep1()) { setState(() => _step = 2); } }),
       const SizedBox(height: 10),
       _GhostButton(label: '← Back', onTap: () => Navigator.of(context).pop()),
     ]);
@@ -259,12 +355,15 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       const _StepLabel('Vehicle Information'),
       const SizedBox(height: 18),
       _FormField(label: 'Tricycle Plate No.', controller: _plateCtrl,
-          placeholder: 'e.g. POLO-1234', inputFormatters: [UpperCaseTextFormatter()]),
+          placeholder: 'e.g. POLO-1234', inputFormatters: [UpperCaseTextFormatter()],
+          errorText: _errors['plateNo']),
       const SizedBox(height: 12),
       _FormField(label: "Driver's License No.", controller: _licCtrl,
-          placeholder: 'e.g. N01-23-456789', inputFormatters: [UpperCaseTextFormatter()]),
+          placeholder: 'e.g. N01-23-456789', inputFormatters: [UpperCaseTextFormatter()],
+          errorText: _errors['licenseNo']),
       const SizedBox(height: 12),
       _DateField(label: 'License Expiry Date', controller: _licExpCtrl, placeholder: 'MM/DD/YYYY',
+        errorText: _errors['licenseExpiry'],
         onTap: () async {
           final picked = await showDatePicker(context: context,
             initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime(2040),
@@ -277,9 +376,11 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       const SizedBox(height: 12),
       _DropdownField<String>(label: 'Preferred Route', value: _selectedRoute,
           placeholder: 'Select route…', items: _routes, itemLabel: (e) => e,
-          onChanged: (val) => setState(() => _selectedRoute = val)),
+          onChanged: (val) => setState(() => _selectedRoute = val),
+          errorText: _errors['preferredRoute']),
       const SizedBox(height: 22),
-      _PrimaryButton(label: 'Continue →', onTap: () => setState(() => _step = 3)),
+      _PrimaryButton(label: 'Continue →',
+          onTap: () { if (_validateStep2()) { setState(() => _step = 3); } }),
       const SizedBox(height: 10),
       _GhostButton(label: '← Back', onTap: () => setState(() => _step = 1)),
     ]);
@@ -315,7 +416,8 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
           emoji: '📃', imageFile: _brgyPhoto,
           onTap: () => _showPickerSheet((file) => setState(() => _brgyPhoto = file))),
       const SizedBox(height: 22),
-      _PrimaryButton(label: 'Continue →', onTap: () => setState(() => _step = 4)),
+      _PrimaryButton(label: 'Continue →',
+          onTap: () { if (_validateStep3()) { setState(() => _step = 4); } }),
       const SizedBox(height: 10),
       _GhostButton(label: '← Back', onTap: () => setState(() => _step = 2)),
     ]);
@@ -340,6 +442,7 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
         _ReviewRow('Name', '${_fnCtrl.text} ${_lnCtrl.text}'.trim().isEmpty ? '—' : '${_fnCtrl.text} ${_lnCtrl.text}'),
         _ReviewRow('Date of Birth', _dobCtrl.text.isEmpty ? '—' : _dobCtrl.text),
         _ReviewRow('Phone', _phCtrl.text.isEmpty ? '—' : _phCtrl.text),
+        _ReviewRow('Email', _emailCtrl.text.isEmpty ? '—' : _emailCtrl.text),
         _ReviewRow('Barangay', _selectedBarangay ?? '—'),
       ]),
       const SizedBox(height: 12),
@@ -365,7 +468,8 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
             style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
       ),
       const SizedBox(height: 22),
-      _PrimaryButton(label: 'Submit for Approval 🛺', onTap: _goToHome),
+      _PrimaryButton(label: _isSubmitting ? 'Submitting…' : 'Submit for Approval 🛺',
+          onTap: _isSubmitting ? null : _submitApplication),
       const SizedBox(height: 10),
       _GhostButton(label: '← Back', onTap: () => setState(() => _step = 3)),
     ]);
@@ -373,26 +477,16 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
 
   Widget _buildLogIn() {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _FormField(label: 'Phone Number', controller: _liPhCtrl, placeholder: '09XX XXX XXXX',
-          keyboardType: TextInputType.phone),
+      _FormField(label: 'Email or Phone Number', controller: _liPhCtrl,
+          placeholder: 'juan@email.com or 09XX XXX XXXX',
+          errorText: _errors['liPhone']),
       const SizedBox(height: 12),
       _FormField(label: 'Password', controller: _liPwCtrl, placeholder: 'Your password',
-          obscure: _liObscure, onToggleObscure: () => setState(() => _liObscure = !_liObscure)),
-      const SizedBox(height: 12),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(color: AppColors.surfaceAlt, borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0x1C14142A))),
-        child: Text.rich(TextSpan(children: [
-          const TextSpan(text: '🎓 '),
-          TextSpan(text: 'Demo: ', style: TextStyle(color: AppColors.primaryLight,
-              fontWeight: FontWeight.w700, fontSize: 12)),
-          const TextSpan(text: 'any credentials work',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        ]), textAlign: TextAlign.center),
-      ),
+          obscure: _liObscure, onToggleObscure: () => setState(() => _liObscure = !_liObscure),
+          errorText: _errors['liPassword']),
       const SizedBox(height: 22),
-      _PrimaryButton(label: 'Log In →', onTap: _goToHome),
+      _PrimaryButton(label: _isSubmitting ? 'Logging In…' : 'Log In →',
+          onTap: _isSubmitting ? null : _logIn),
       const SizedBox(height: 10),
       _GhostButton(label: '← Back', onTap: () => Navigator.of(context).pop()),
     ]);
@@ -544,9 +638,11 @@ class _FormField extends StatelessWidget {
   final bool obscure;
   final VoidCallback? onToggleObscure;
   final List<TextInputFormatter>? inputFormatters;
+  final String? errorText;
 
   const _FormField({required this.label, required this.placeholder, required this.controller,
-      this.keyboardType, this.obscure = false, this.onToggleObscure, this.inputFormatters});
+      this.keyboardType, this.obscure = false, this.onToggleObscure, this.inputFormatters,
+      this.errorText});
 
   @override
   Widget build(BuildContext context) {
@@ -558,7 +654,7 @@ class _FormField extends StatelessWidget {
         obscureText: obscure, inputFormatters: inputFormatters,
         style: const TextStyle(fontFamily: 'DM Sans', fontSize: 14,
             fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: placeholder,
+        decoration: InputDecoration(hintText: placeholder, errorText: errorText,
           suffixIcon: onToggleObscure != null
               ? GestureDetector(onTap: onToggleObscure,
                   child: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
@@ -572,9 +668,10 @@ class _DateField extends StatelessWidget {
   final String placeholder;
   final TextEditingController controller;
   final VoidCallback onTap;
+  final String? errorText;
 
   const _DateField({required this.label, required this.placeholder,
-      required this.controller, required this.onTap});
+      required this.controller, required this.onTap, this.errorText});
 
   @override
   Widget build(BuildContext context) {
@@ -585,7 +682,7 @@ class _DateField extends StatelessWidget {
       TextFormField(controller: controller, readOnly: true, onTap: onTap,
         style: const TextStyle(fontFamily: 'DM Sans', fontSize: 14,
             fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: placeholder,
+        decoration: InputDecoration(hintText: placeholder, errorText: errorText,
           suffixIcon: const Icon(Icons.calendar_today_outlined,
               color: AppColors.textTertiary, size: 17))),
     ]);
@@ -599,9 +696,10 @@ class _DropdownField<T> extends StatelessWidget {
   final List<T> items;
   final String Function(T) itemLabel;
   final void Function(T?) onChanged;
+  final String? errorText;
 
   const _DropdownField({required this.label, required this.placeholder, required this.value,
-      required this.items, required this.itemLabel, required this.onChanged});
+      required this.items, required this.itemLabel, required this.onChanged, this.errorText});
 
   @override
   Widget build(BuildContext context) {
@@ -619,6 +717,7 @@ class _DropdownField<T> extends StatelessWidget {
         onChanged: onChanged,
         decoration: InputDecoration(filled: true, fillColor: AppColors.surfaceAlt,
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          errorText: errorText,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: Color(0x1C14142A), width: 1.5)),
           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
@@ -682,7 +781,7 @@ class _ReviewRow extends StatelessWidget {
 
 class _PrimaryButton extends StatelessWidget {
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   const _PrimaryButton({required this.label, required this.onTap});
 
   @override

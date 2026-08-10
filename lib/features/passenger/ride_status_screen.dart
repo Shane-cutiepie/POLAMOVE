@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/ride_service.dart';
 
 class RideStatusScreen extends StatefulWidget {
+  final String rideId;
   final String pickup;
   final String destination;
   final String rideType;
@@ -11,6 +14,7 @@ class RideStatusScreen extends StatefulWidget {
 
   const RideStatusScreen({
     super.key,
+    required this.rideId,
     required this.pickup,
     required this.destination,
     required this.rideType,
@@ -32,11 +36,12 @@ class _RideStatusScreenState extends State<RideStatusScreen>
   final _stepLabels = ['Search', 'Found', 'Arrived', 'Trip', 'Done'];
   final _stepEmojis = ['🔍', '🛺', '📍', '🏁', '✅'];
 
-  // Mock driver info (shown after step 1)
-  final _driverName = 'Carlos Reyes';
-  final _driverPlate = 'POLO-1234';
-  final _driverRating = '4.9';
-  final _driverTrips = '214';
+  // Driver details, fetched once when a driver is assigned to the ride
+  String? _assignedDriverId;
+  String _driverName = '—';
+  String _driverPlate = '—';
+  String _driverRating = '—';
+  String _driverTrips = '0';
 
   @override
   void initState() {
@@ -46,11 +51,52 @@ class _RideStatusScreenState extends State<RideStatusScreen>
     _pulseAnim = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
     _pulseController.repeat(reverse: true);
+  }
 
-    // Simulate driver found after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _currentStep = 1);
+  int _stepFromStatus(String? status) {
+    switch (status) {
+      case 'searching': return 0;
+      case 'accepted':  return 1;
+      case 'arrived':   return 2;
+      case 'ongoing':   return 3;
+      case 'completed': return 4;
+      default:          return 0;
+    }
+  }
+
+  /// Pulls the assigned driver's name, plate and stats once per driver.
+  /// Called from a post-frame callback so it never setStates during build.
+  Future<void> _loadDriver(String driverId) async {
+    _assignedDriverId = driverId;
+    final user = await RideService.userInfo(driverId);
+    final driver = await RideService.driverInfo(driverId);
+    if (!mounted) return;
+    setState(() {
+      final first = user?['firstName'] ?? '';
+      final last = user?['lastName'] ?? '';
+      final name = '$first $last'.trim();
+      _driverName = name.isEmpty ? '—' : name;
+      _driverPlate = driver?['plateNo'] ?? '—';
+      final rating = (driver?['rating'] ?? 0).toDouble();
+      _driverRating = rating > 0 ? rating.toStringAsFixed(1) : '—';
+      _driverTrips = '${driver?['totalRides'] ?? 0}';
     });
+  }
+
+  Future<void> _cancelRide() async {
+    try {
+      await RideService.cancelRide(widget.rideId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } on RideException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.message, style: const TextStyle(fontFamily: 'DM Sans')),
+        backgroundColor: AppColors.primaryDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
   }
 
   @override
@@ -105,9 +151,47 @@ class _RideStatusScreenState extends State<RideStatusScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Column(children: [
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) return;
+        // Leaving while still searching abandons the ride in Firestore
+        // forever otherwise, since nothing else ever clears it. Best-effort:
+        // the screen is already gone, so there's nowhere to surface a failure.
+        if (_currentStep == 0) {
+          RideService.cancelRide(widget.rideId).catchError((_) {});
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: RideService.watchRide(widget.rideId),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary));
+            }
+
+            final ride = snapshot.data!.data() ?? {};
+            // Status is the source of truth — the step is only a view of it.
+            _currentStep = _stepFromStatus(ride['status'] as String?);
+
+            final driverId = ride['driverId'] as String?;
+            if (driverId != null && driverId != _assignedDriverId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _loadDriver(driverId);
+              });
+            }
+
+            return _buildContent(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    return Column(children: [
         // Step bar
         _buildStepBar(),
         // Status header
@@ -158,8 +242,7 @@ class _RideStatusScreenState extends State<RideStatusScreen>
         ])),
         // Info panel
         _buildInfoPanel(context),
-      ]),
-    );
+      ]);
   }
 
   Widget _buildStepBar() {
@@ -304,7 +387,7 @@ class _RideStatusScreenState extends State<RideStatusScreen>
           // Cancel or Done button
           if (_currentStep < 4)
             GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
+              onTap: _cancelRide,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(color: AppColors.surfaceAlt,
@@ -322,23 +405,6 @@ class _RideStatusScreenState extends State<RideStatusScreen>
                 child: const Text('Done', style: TextStyle(fontSize: 12,
                     fontWeight: FontWeight.w700, color: Colors.white)))),
         ]),
-        // Dev step simulator buttons
-        if (_currentStep < 4) ...[
-          const SizedBox(height: 12),
-          SizedBox(width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => setState(() => _currentStep++),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: BorderSide(color: AppColors.primary.withOpacity(0.4), width: 1.5),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-              child: Text('Simulate Next Step → ${_stepLabels[(_currentStep + 1).clamp(0, 4)]}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ],
       ]),
     );
   }

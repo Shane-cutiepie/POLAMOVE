@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/ride_service.dart';
 
 class DriverTrackingScreen extends StatefulWidget {
+  final String rideId;
   final String passengerName;
   final String from;
   final String to;
@@ -12,6 +15,7 @@ class DriverTrackingScreen extends StatefulWidget {
 
   const DriverTrackingScreen({
     super.key,
+    required this.rideId,
     required this.passengerName,
     required this.from,
     required this.to,
@@ -25,6 +29,7 @@ class DriverTrackingScreen extends StatefulWidget {
 
 class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
   int _step = 0; // 0=Heading to pickup, 1=Arrived, 2=Trip, 3=Done
+  bool _busy = false;
 
   static const LatLng _polangui = LatLng(13.2924, 123.4866);
 
@@ -59,11 +64,67 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
     }
   }
 
+  int _stepFromStatus(String? status) {
+    switch (status) {
+      case 'accepted':  return 0;
+      case 'arrived':   return 1;
+      case 'ongoing':   return 2;
+      case 'completed': return 3;
+      default:          return 0;
+    }
+  }
+
+  /// Each button press moves the ride forward in Firestore; the step the
+  /// screen shows follows from the document, never from local state.
+  Future<void> _advanceStep(int step) async {
+    setState(() => _busy = true);
+    try {
+      switch (step) {
+        case 0:
+          await RideService.markArrived(widget.rideId);
+          break;
+        case 1:
+          await RideService.startTrip(widget.rideId);
+          break;
+        case 2:
+          await RideService.completeRide(widget.rideId);
+          break;
+      }
+    } on RideException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.message, style: const TextStyle(fontFamily: 'DM Sans')),
+          backgroundColor: AppColors.primaryDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Column(children: [
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: RideService.watchRide(widget.rideId),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(color: AppColors.primary));
+          }
+          final ride = snapshot.data!.data() ?? {};
+          _step = _stepFromStatus(ride['status'] as String?);
+          return _buildContent(context);
+        },
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    return Column(children: [
         // Status header
         _buildStatusHeader(),
         // Map
@@ -96,8 +157,7 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
         ])),
         // Info panel
         _buildInfoPanel(context),
-      ]),
-    );
+      ]);
   }
 
   Widget _buildStatusHeader() {
@@ -206,7 +266,7 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
         if (_step < 3)
           SizedBox(width: double.infinity,
             child: ElevatedButton(
-              onPressed: () => setState(() => _step++),
+              onPressed: _busy ? null : () => _advanceStep(_step),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _statusColor,
                 foregroundColor: Colors.white,
@@ -280,9 +340,24 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
           const SizedBox(height: 22),
           SizedBox(width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await RideService.cancelRide(widget.rideId);
+                  navigator.pop();
+                  navigator.pop();
+                } on RideException catch (e) {
+                  navigator.pop();
+                  messenger.showSnackBar(SnackBar(
+                    content: Text(e.message,
+                        style: const TextStyle(fontFamily: 'DM Sans')),
+                    backgroundColor: AppColors.primaryDark,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ));
+                }
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,

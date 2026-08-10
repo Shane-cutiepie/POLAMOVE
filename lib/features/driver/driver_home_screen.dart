@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/location_service.dart';
+import '../../core/services/ride_service.dart';
 import 'driver_tracking_screen.dart';
 import 'driver_history_screen.dart';
 import 'driver_notifications_screen.dart';
@@ -36,15 +41,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   double _todayEarnings = 0;
   int _todayTrips = 0;
 
-  // Mock incoming request
-  final _request = {
-    'from': 'Polangui Centro',
-    'to': 'Public Market',
-    'type': 'PolaSolo',
-    'emoji': '🚖',
-    'fare': '₱20',
-    'distance': '0.8 km away',
-  };
+  // Live incoming request
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _requestSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _statusSub;
+  String? _requestRideId;
+  Map<String, dynamic>? _requestData;
+  String _requestPassengerName = '—';
+
+  /// Rides this driver has declined. Session-only: they'll see it again next
+  /// time they go online, which is intended — another driver may have
+  /// declined it too and the passenger is still waiting.
+  final Set<String> _declinedRideIds = {};
 
   @override
   void initState() {
@@ -61,31 +68,120 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
     _pulseController.repeat(reverse: true);
 
-    _loadDriverStatus();
+    _watchDriverStatus();
+    _loadFirstName();
   }
 
-  Future<void> _loadDriverStatus() async {
+  /// Live rather than a one-off read, so an admin approving the account flips
+  /// the Go Online toggle on without the driver restarting the app.
+  void _watchDriverStatus() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    _statusSub = AuthService.driverStream(uid).listen(
+      (doc) {
+        final data = doc.data();
+        if (!mounted) return;
+        setState(() {
+          _driverStatus = data?['status'] ?? 'pending';
+          _isOnline = data?['isOnline'] ?? false;
+          _statusLoaded = true;
+        });
+        // Keep the booking feed in step with what the database says.
+        if (_isOnline) {
+          _subscribeToRequests();
+        } else {
+          _unsubscribeFromRequests();
+        }
+      },
+      onError: (_) {
+        if (mounted) setState(() => _statusLoaded = true);
+      },
+    );
+  }
+
+  Future<void> _loadFirstName() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('drivers').doc(uid).get();
-      final userDoc = await FirebaseFirestore.instance
           .collection('users').doc(uid).get();
       if (!mounted) return;
-      setState(() {
-        _driverStatus = doc.data()?['status'] ?? 'pending';
-        _isOnline = doc.data()?['isOnline'] ?? false;
-        _firstName = userDoc.data()?['firstName'] ?? '';
-        _statusLoaded = true;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _statusLoaded = true);
+      setState(() => _firstName = doc.data()?['firstName'] ?? '');
+    } catch (_) {}
+  }
+
+  void _subscribeToRequests() {
+    if (_requestSub != null) return;
+    _requestSub = RideService.searchingRides().listen(
+      (snap) async {
+        if (!mounted) return;
+
+        // The ride currently on screen vanished — another driver accepted
+        // it, or the passenger cancelled. Drop it silently and fall through
+        // to look for a replacement in this same snapshot.
+        if (_hasRequest &&
+            _requestRideId != null &&
+            !snap.docs.any((d) => d.id == _requestRideId)) {
+          _clearRequest();
+        }
+
+        // Leave the card alone while the driver is deciding on one.
+        if (_hasRequest) return;
+
+        final doc = _firstUndeclined(snap.docs);
+        if (doc == null) {
+          _clearRequest();
+          return;
+        }
+        final data = doc.data();
+        final passengerId = data['passengerId'] as String?;
+        final user =
+            passengerId == null ? null : await RideService.userInfo(passengerId);
+        if (!mounted) return;
+
+        final name =
+            '${user?['firstName'] ?? ''} ${user?['lastName'] ?? ''}'.trim();
+        _requestRideId = doc.id;
+        _requestData = data;
+        _requestPassengerName = name.isEmpty ? '—' : name;
+
+        setState(() => _hasRequest = true);
+        _requestController.forward();
+      },
+      onError: (_) {},
+    );
+  }
+
+  void _unsubscribeFromRequests() {
+    _requestSub?.cancel();
+    _requestSub = null;
+    _clearRequest();
+  }
+
+  /// Oldest-first order is preserved from the query — this just skips over
+  /// rides the driver has already said no to this session.
+  QueryDocumentSnapshot<Map<String, dynamic>>? _firstUndeclined(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    for (final doc in docs) {
+      if (!_declinedRideIds.contains(doc.id)) return doc;
     }
+    return null;
+  }
+
+  void _clearRequest() {
+    _requestRideId = null;
+    _requestData = null;
+    _requestPassengerName = '—';
+    if (_hasRequest && mounted) setState(() => _hasRequest = false);
+    _requestController.reset();
   }
 
   @override
   void dispose() {
+    _statusSub?.cancel();
+    _requestSub?.cancel();
+    LocationService.stopTracking();
     _requestController.dispose();
     _pulseController.dispose();
     super.dispose();
@@ -123,33 +219,64 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
 
     if (next) {
-      // TODO: replace with a Firestore stream of searching rides (step 7.6)
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && _isOnline) {
-          setState(() => _hasRequest = true);
-          _requestController.forward();
-        }
-      });
+      // Warn but stay online — an invisible driver can still take bookings.
+      if (!await LocationService.ensurePermission() && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+            'Location permission is off. You\'ll show at Polangui centre until you enable it.',
+            style: TextStyle(fontFamily: 'DM Sans'),
+          ),
+          backgroundColor: AppColors.primaryDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+      await LocationService.startTracking();
+      _subscribeToRequests();
     } else {
-      _hasRequest = false;
-      _requestController.reset();
+      await LocationService.stopTracking();
+      await LocationService.clearLocation();
+      _unsubscribeFromRequests();
     }
   }
 
-  void _acceptRide() {
-    setState(() => _hasRequest = false);
-    _requestController.reset();
-    Navigator.of(context).push(MaterialPageRoute(
+  Future<void> _acceptRide() async {
+    final rideId = _requestRideId;
+    if (rideId == null) return;
+    // Held locally: accepting drops the ride out of the searching feed, and
+    // that listener clears _requestData before the push below runs.
+    final data = _requestData;
+    final passengerName = _requestPassengerName;
+    try {
+      await RideService.acceptRide(rideId);
+      if (!mounted) return;
+      setState(() => _hasRequest = false);
+      _requestController.reset();
+      Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => DriverTrackingScreen(
-          passengerName: 'Juan dela Cruz',
-          from: _request['from']!,
-          to: _request['to']!,
-          rideType: _request['type']!,
-          fare: _request['fare']!,
-        )));
+          rideId: rideId,
+          passengerName: passengerName,
+          from: data?['pickup']?['name'] ?? '—',
+          to: data?['dropoff']?['name'] ?? '—',
+          rideType: data?['rideType'] ?? '—',
+          fare: '₱${(data?['totalFare'] ?? 0).toStringAsFixed(0)}',
+        ),
+      ));
+    } on RideException catch (e) {
+      if (!mounted) return;
+      setState(() => _hasRequest = false);
+      _requestController.reset();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.message, style: const TextStyle(fontFamily: 'DM Sans')),
+        backgroundColor: AppColors.primaryDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
   }
 
   void _declineRide() {
+    if (_requestRideId != null) _declinedRideIds.add(_requestRideId!);
     setState(() => _hasRequest = false);
     _requestController.reset();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -305,11 +432,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       child: const Icon(Icons.notifications_outlined,
                           color: Colors.white, size: 18)),
                   ),
-                  Positioned(top: 6, right: 6,
-                    child: Container(width: 7, height: 7,
-                      decoration: BoxDecoration(color: const Color(0xFFFBBF24),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.primary, width: 1.5)))),
+                  const Positioned(top: 6, right: 6, child: _UnreadBadge()),
                 ]),
               ]),
               const SizedBox(height: 10),
@@ -410,15 +533,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Row(children: [
-            Text(_request['emoji']!, style: const TextStyle(fontSize: 22)),
+            const Text('🚖', style: TextStyle(fontSize: 22)),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(_request['type']!, style: const TextStyle(fontFamily: 'Syne',
+              Text(_requestData?['rideType'] ?? '—', style: const TextStyle(fontFamily: 'Syne',
                   fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)),
-              Text(_request['distance']!, style: const TextStyle(fontSize: 11,
+              const Text('0.8 km away', style: TextStyle(fontSize: 11,
                   color: AppColors.textSecondary)),
             ])),
-            Text(_request['fare']!, style: const TextStyle(fontFamily: 'Syne',
+            Text('₱${(_requestData?['totalFare'] ?? 0).toStringAsFixed(0)}',
+                style: const TextStyle(fontFamily: 'Syne',
                 fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.primary)),
           ]),
         ),
@@ -438,10 +562,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text(_request['from']!, style: const TextStyle(fontSize: 13,
+              Text(_requestData?['pickup']?['name'] ?? '—', style: const TextStyle(fontSize: 13,
                   fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
               const SizedBox(height: 14),
-              Text(_request['to']!, style: const TextStyle(fontSize: 13,
+              Text(_requestData?['dropoff']?['name'] ?? '—', style: const TextStyle(fontSize: 13,
                   fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
             ])),
           ]),
@@ -564,6 +688,46 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           );
         }),
       ),
+    );
+  }
+}
+
+/// Live unread notification count for the top-bar bell. Keeps the original
+/// dot's position, colours and border — it only grows enough to fit a digit.
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const SizedBox.shrink();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .where('read', isEqualTo: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.docs.length ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+
+        return Container(
+          constraints: const BoxConstraints(minWidth: 14),
+          height: 14,
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFBBF24),
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: AppColors.primary, width: 1.5),
+          ),
+          child: Center(
+            child: Text(count > 9 ? '9+' : '$count',
+                style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary, height: 1)),
+          ),
+        );
+      },
     );
   }
 }

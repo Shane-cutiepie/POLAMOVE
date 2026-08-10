@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/auth_service.dart';
 import '../role_selection/role_selection_screen.dart';
+import '../shared/change_password_screen.dart';
+import '../shared/edit_profile_screen.dart';
+import '../shared/notification_settings_screen.dart';
 
 class DriverProfileScreen extends StatelessWidget {
   const DriverProfileScreen({super.key});
@@ -106,17 +109,20 @@ class DriverProfileScreen extends StatelessWidget {
                       _MenuItem(
                         icon: Icons.person_outline,
                         label: 'Edit Personal Info',
-                        onTap: () => _showSoon(context, 'Editing personal info'),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const EditProfileScreen(isDriver: true))),
                       ),
                       _MenuItem(
                         icon: Icons.lock_outline,
                         label: 'Change Password',
-                        onTap: () => _showSoon(context, 'Changing password'),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const ChangePasswordScreen())),
                       ),
                       _MenuItem(
                         icon: Icons.notifications_none_rounded,
                         label: 'Notification Settings',
-                        onTap: () => _showSoon(context, 'Notification settings'),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const NotificationSettingsScreen())),
                       ),
                       _MenuItem(
                         icon: Icons.help_outline,

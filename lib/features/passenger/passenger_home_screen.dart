@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/ride_service.dart';
 import 'booking_screen.dart';
 import 'passenger_history_screen.dart';
 import 'passenger_notifications_screen.dart';
@@ -19,6 +23,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   final MapController _mapController = MapController();
 
   static const LatLng _polangui = LatLng(13.2924, 123.4866);
+  static final Distance _distance = const Distance();
+  static const double _nearbyRadiusMeters = 3000;
 
   final _navItems = const [
     {'icon': '🏠', 'label': 'Home'},
@@ -50,58 +56,66 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
   // ── Home Page ─────────────────────────────────────
   Widget _buildHomePage() {
-    return Column(children: [
-      _buildTopBar(),
-      Expanded(child: Stack(children: [
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _polangui, initialZoom: 15,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag),
-          ),
-          children: [
-            TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.polamove.app'),
-            MarkerLayer(markers: _buildDriverMarkers()),
-          ],
-        ),
-        // Nearby drivers chip
-        Positioned(top: 10, right: 10,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border, width: 1.5),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12),
-                    blurRadius: 12, offset: const Offset(0, 4))]),
-            child: Row(children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('4', style: TextStyle(fontFamily: 'Syne', fontSize: 19,
-                    fontWeight: FontWeight.w800, color: AppColors.primaryLight)),
-                Text('Nearby', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                    color: AppColors.textSecondary, letterSpacing: 0.3)),
-              ]),
-              const SizedBox(width: 7),
-              const Text('🛺', style: TextStyle(fontSize: 20)),
-            ]),
-          ),
-        ),
-        // Recenter button
-        Positioned(bottom: 10, right: 10,
-          child: GestureDetector(
-            onTap: () => _mapController.move(_polangui, 15),
-            child: Container(width: 40, height: 40,
-              decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.border, width: 1.5),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8, offset: const Offset(0, 2))]),
-              child: const Icon(Icons.my_location_rounded, color: AppColors.primary, size: 18)),
-          ),
-        ),
-      ])),
-      _buildBottomSheet(),
-    ]);
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: RideService.onlineDrivers(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? const [];
+        final nearby = _nearbyCount(docs);
+
+        return Column(children: [
+          _buildTopBar(),
+          Expanded(child: Stack(children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _polangui, initialZoom: 15,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag),
+              ),
+              children: [
+                TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.polamove.app'),
+                MarkerLayer(markers: _buildDriverMarkers(docs)),
+              ],
+            ),
+            // Nearby drivers chip
+            Positioned(top: 10, right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border, width: 1.5),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12),
+                        blurRadius: 12, offset: const Offset(0, 4))]),
+                child: Row(children: [
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('$nearby', style: const TextStyle(fontFamily: 'Syne', fontSize: 19,
+                        fontWeight: FontWeight.w800, color: AppColors.primaryLight)),
+                    Text('Nearby', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary, letterSpacing: 0.3)),
+                  ]),
+                  const SizedBox(width: 7),
+                  const Text('🛺', style: TextStyle(fontSize: 20)),
+                ]),
+              ),
+            ),
+            // Recenter button
+            Positioned(bottom: 10, right: 10,
+              child: GestureDetector(
+                onTap: () => _mapController.move(_polangui, 15),
+                child: Container(width: 40, height: 40,
+                  decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.border, width: 1.5),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8, offset: const Offset(0, 2))]),
+                  child: const Icon(Icons.my_location_rounded, color: AppColors.primary, size: 18)),
+              ),
+            ),
+          ])),
+          _buildBottomSheet(nearby),
+        ]);
+      },
+    );
   }
 
   // ── Top Bar ───────────────────────────────────────
@@ -118,8 +132,18 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('Hi, Juan! 👋', style: TextStyle(fontFamily: 'Syne',
-                      fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: AuthService.userStream(
+                        FirebaseAuth.instance.currentUser!.uid),
+                    builder: (context, snapshot) {
+                      final first =
+                          snapshot.data?.data()?['firstName']?.toString() ?? '';
+                      return Text(first.isEmpty ? 'Hi! 👋' : 'Hi, $first! 👋',
+                          style: const TextStyle(fontFamily: 'Syne',
+                              fontSize: 20, fontWeight: FontWeight.w800,
+                              color: Colors.white));
+                    },
+                  ),
                   const SizedBox(height: 2),
                   Text('Where to in Polangui today?',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.66))),
@@ -133,11 +157,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                           borderRadius: BorderRadius.circular(11),
                           border: Border.all(color: Colors.white.withOpacity(0.2))),
                       child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 18)),
-                    Positioned(top: 6, right: 6,
-                      child: Container(width: 7, height: 7,
-                        decoration: BoxDecoration(color: const Color(0xFFFBBF24),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.primary, width: 1.5)))),
+                    const Positioned(top: 6, right: 6, child: _UnreadBadge()),
                   ]),
                 ),
               ]),
@@ -165,7 +185,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   }
 
   // ── Bottom Sheet ──────────────────────────────────
-  Widget _buildBottomSheet() {
+  Widget _buildBottomSheet(int nearbyCount) {
     return Container(
       decoration: BoxDecoration(color: AppColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
@@ -203,7 +223,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           const SizedBox(width: 6),
           _InfoChip(emoji: '⏱️', value: '2–5 min', label: 'ETA'),
           const SizedBox(width: 6),
-          _InfoChip(emoji: '🛺', value: '4 Free', label: 'Drivers'),
+          _InfoChip(emoji: '🛺',
+              value: nearbyCount == 0 ? 'None' : '$nearbyCount Free',
+              label: 'Drivers'),
         ]),
         const SizedBox(height: 6),
       ]),
@@ -245,20 +267,79 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   }
 
   // ── Driver markers ────────────────────────────────
-  List<Marker> _buildDriverMarkers() {
-    final positions = [
-      const LatLng(13.2934, 123.4856), const LatLng(13.2914, 123.4876),
-      const LatLng(13.2944, 123.4886), const LatLng(13.2904, 123.4846),
-    ];
-    return positions.map((pos) => Marker(
-      point: pos, width: 32, height: 32,
-      child: Container(
-        decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle,
+  List<Marker> _buildDriverMarkers(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final markers = <Marker>[];
+    for (final d in docs) {
+      final loc = d.data()['location'];
+      if (loc is! GeoPoint) continue;
+      markers.add(Marker(
+        point: LatLng(loc.latitude, loc.longitude),
+        width: 32, height: 32,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.primary, shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 2),
             boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.4),
                 blurRadius: 8, offset: const Offset(0, 2))]),
-        child: const Center(child: Text('🛺', style: TextStyle(fontSize: 14)))),
-    )).toList();
+          child: const Center(child: Text('🛺', style: TextStyle(fontSize: 14)))),
+      ));
+    }
+    return markers;
+  }
+
+  /// Drivers further out than this are online but not usefully "nearby",
+  /// so they aren't advertised on the home screen.
+  int _nearbyCount(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    var count = 0;
+    for (final d in docs) {
+      final loc = d.data()['location'];
+      if (loc is! GeoPoint) continue;
+      final metres = _distance.as(LengthUnit.Meter,
+          _polangui, LatLng(loc.latitude, loc.longitude));
+      if (metres <= _nearbyRadiusMeters) count++;
+    }
+    return count;
+  }
+}
+
+/// Live unread notification count for the top-bar bell. Keeps the original
+/// dot's position, colours and border — it only grows enough to fit a digit.
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const SizedBox.shrink();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .where('read', isEqualTo: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.docs.length ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+
+        return Container(
+          constraints: const BoxConstraints(minWidth: 14),
+          height: 14,
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFBBF24),
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: AppColors.primary, width: 1.5),
+          ),
+          child: Center(
+            child: Text(count > 9 ? '9+' : '$count',
+                style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary, height: 1)),
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -1,41 +1,66 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/ride_service.dart';
 
 class PassengerHistoryScreen extends StatelessWidget {
   const PassengerHistoryScreen({super.key});
 
-  final List<Map<String, dynamic>> _rides = const [
-    {
-      'type': 'solo', 'emoji': '🚖',
-      'from': 'Polangui Centro', 'to': 'Bicol University',
-      'date': 'Aug 1, 2026', 'time': '8:14 AM',
-      'fare': '₱20', 'status': 'Completed',
-    },
-    {
-      'type': 'share', 'emoji': '👥',
-      'from': 'Public Market', 'to': 'Lidong',
-      'date': 'Jul 30, 2026', 'time': '3:42 PM',
-      'fare': '₱30', 'status': 'Completed',
-    },
-    {
-      'type': 'rent', 'emoji': '🗓️',
-      'from': 'Polangui Centro', 'to': 'Multiple stops',
-      'date': 'Jul 28, 2026', 'time': '10:00 AM',
-      'fare': '₱120', 'status': 'Completed',
-    },
-    {
-      'type': 'solo', 'emoji': '🚖',
-      'from': 'Bus Terminal', 'to': 'Sabang',
-      'date': 'Jul 25, 2026', 'time': '6:55 PM',
-      'fare': '₱20', 'status': 'Cancelled',
-    },
-    {
-      'type': 'share', 'emoji': '👥',
-      'from': 'Polangui Hospital', 'to': 'Centro',
-      'date': 'Jul 22, 2026', 'time': '1:30 PM',
-      'fare': '₱15', 'status': 'Completed',
-    },
-  ];
+  /// Flattens a ride document into the map shape _RideCard already renders.
+  static Map<String, dynamic> _toCard(Map<String, dynamic> ride) {
+    final type = _shortType(ride['rideType']);
+    final fare = (ride['totalFare'] ?? 0).toDouble();
+    final requestedAt = ride['requestedAt'];
+    final date = requestedAt is Timestamp ? requestedAt.toDate() : null;
+
+    return {
+      'type': type,
+      'emoji': _emoji(type),
+      'from': ride['pickup']?['name'] ?? '—',
+      'to': ride['dropoff']?['name'] ?? '—',
+      'date': date == null ? '—' : _formatDate(date),
+      'time': date == null ? '—' : _formatTime(date),
+      'fare': '₱${fare.toStringAsFixed(0)}',
+      'fareValue': fare,
+      'status': _statusLabel(ride['status']),
+    };
+  }
+
+  static String _shortType(dynamic rideType) {
+    switch (rideType) {
+      case 'PolaShare': return 'share';
+      case 'PolaRent':  return 'rent';
+      default:          return 'solo';
+    }
+  }
+
+  static String _emoji(String type) {
+    switch (type) {
+      case 'share': return '👥';
+      case 'rent':  return '🗓️';
+      default:      return '🚖';
+    }
+  }
+
+  static String _statusLabel(dynamic status) {
+    switch (status) {
+      case 'completed': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      default:          return 'Ongoing';
+    }
+  }
+
+  static String _formatDate(DateTime d) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  static String _formatTime(DateTime d) {
+    final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    final period = d.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12:${d.minute.toString().padLeft(2, '0')} $period';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,37 +81,62 @@ class PassengerHistoryScreen extends StatelessWidget {
           ),
         ),
       ),
-      // Summary chips
-      Container(
-        color: AppColors.surface,
-        padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
-        child: Row(children: [
-          _SummaryChip(label: 'Total Rides', value: '5', emoji: '🛺'),
-          const SizedBox(width: 8),
-          _SummaryChip(label: 'Total Spent', value: '₱205', emoji: '💰'),
-          const SizedBox(width: 8),
-          _SummaryChip(label: 'Completed', value: '4', emoji: '✅'),
-        ]),
-      ),
-      const Divider(height: 1, color: Color(0x1C14142A)),
-      // Ride list
       Expanded(
-        child: _rides.isEmpty
-            ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('🛺', style: TextStyle(fontSize: 48)),
-                SizedBox(height: 12),
-                Text('No rides yet', style: TextStyle(fontFamily: 'Syne',
-                    fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                SizedBox(height: 4),
-                Text('Your ride history will appear here',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-              ]))
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(15, 14, 15, 20),
-                itemCount: _rides.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) => _RideCard(ride: _rides[i]),
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: RideService.passengerHistory(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary));
+            }
+
+            final rides = snapshot.data!.docs
+                .map((d) => _toCard(d.data()))
+                .toList();
+            final completed =
+                rides.where((r) => r['status'] == 'Completed').toList();
+            final spent = completed.fold<double>(
+                0, (acc, r) => acc + (r['fareValue'] as double));
+
+            return Column(children: [
+              // Summary chips
+              Container(
+                color: AppColors.surface,
+                padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
+                child: Row(children: [
+                  _SummaryChip(label: 'Total Rides',
+                      value: '${completed.length}', emoji: '🛺'),
+                  const SizedBox(width: 8),
+                  _SummaryChip(label: 'Total Spent',
+                      value: '₱${spent.toStringAsFixed(0)}', emoji: '💰'),
+                  const SizedBox(width: 8),
+                  _SummaryChip(label: 'Completed',
+                      value: '${completed.length}', emoji: '✅'),
+                ]),
               ),
+              const Divider(height: 1, color: Color(0x1C14142A)),
+              // Ride list
+              Expanded(
+                child: rides.isEmpty
+                    ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text('🛺', style: TextStyle(fontSize: 48)),
+                        SizedBox(height: 12),
+                        Text('No rides yet', style: TextStyle(fontFamily: 'Syne',
+                            fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                        SizedBox(height: 4),
+                        Text('Your ride history will appear here',
+                            style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      ]))
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(15, 14, 15, 20),
+                        itemCount: rides.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) => _RideCard(ride: rides[i]),
+                      ),
+              ),
+            ]);
+          },
+        ),
       ),
     ]);
   }

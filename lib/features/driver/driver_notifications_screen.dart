@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
 
 enum NotifCategory { ride, earnings, account, announcement }
@@ -58,54 +60,6 @@ class _NotifItem {
   }
 }
 
-// TODO: Firebase - replace with Firestore stream + FCM push handling
-final List<_NotifItem> _mockNotifications = [
-  _NotifItem(
-    title: 'New ride request nearby',
-    message:
-        'A passenger in Brgy. Oras is looking for a PolaSolo ride. Go online to receive requests.',
-    category: NotifCategory.ride,
-    time: DateTime(2026, 8, 4, 7, 45),
-    unread: true,
-  ),
-  _NotifItem(
-    title: 'Ride completed',
-    message:
-        'Your trip with Juan Dela Cruz is complete. Please collect cash payment of ₱20.',
-    category: NotifCategory.earnings,
-    time: DateTime(2026, 8, 3, 14, 35),
-    unread: true,
-  ),
-  _NotifItem(
-    title: 'Application approved',
-    message:
-        'Your driver application has been approved by the admin. You can now go online and accept rides.',
-    category: NotifCategory.account,
-    time: DateTime(2026, 8, 2, 10, 12),
-  ),
-  _NotifItem(
-    title: 'TODA general assembly',
-    message:
-        'The Polangui Tricycle Operators and Drivers Association will hold its monthly assembly on August 10 at the Municipal Hall.',
-    category: NotifCategory.announcement,
-    time: DateTime(2026, 8, 1, 16, 0),
-  ),
-  _NotifItem(
-    title: 'License expiring soon',
-    message:
-        'Your driver\'s license expires in 30 days. Please upload a renewed copy to keep your account active.',
-    category: NotifCategory.account,
-    time: DateTime(2026, 7, 30, 9, 0),
-  ),
-  _NotifItem(
-    title: 'Ride cancelled by passenger',
-    message:
-        'Ana Villareal cancelled the ride request from Brgy. Quirangay before pickup.',
-    category: NotifCategory.ride,
-    time: DateTime(2026, 7, 29, 11, 20),
-  ),
-];
-
 class DriverNotificationsScreen extends StatefulWidget {
   const DriverNotificationsScreen({super.key});
 
@@ -115,78 +69,130 @@ class DriverNotificationsScreen extends StatefulWidget {
 }
 
 class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
-  late List<_NotifItem> _items;
+  CollectionReference<Map<String, dynamic>> get _collection =>
+      FirebaseFirestore.instance.collection('notifications');
 
-  @override
-  void initState() {
-    super.initState();
-    _items = List.of(_mockNotifications);
+  Stream<QuerySnapshot<Map<String, dynamic>>> _stream(String uid) => _collection
+      .where('userId', isEqualTo: uid)
+      .orderBy('createdAt', descending: true)
+      .limit(50)
+      .snapshots();
+
+  _NotifItem _toItem(Map<String, dynamic> data) {
+    final createdAt = data['createdAt'];
+    return _NotifItem(
+      title: data['title'] ?? '—',
+      message: data['message'] ?? '—',
+      category: _categoryFrom(data['category']),
+      // Null for the moment between the local write and the server timestamp
+      // landing, which reads as the newest entry either way.
+      time: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
+      unread: data['read'] == false,
+    );
   }
 
-  int get _unreadCount => _items.where((n) => n.unread).length;
+  NotifCategory _categoryFrom(dynamic value) {
+    switch (value) {
+      case 'ride':
+        return NotifCategory.ride;
+      case 'earnings':
+        return NotifCategory.earnings;
+      case 'account':
+        return NotifCategory.account;
+      default:
+        return NotifCategory.announcement;
+    }
+  }
 
-  void _markAllRead() {
-    // TODO: Firebase - batch update read status in Firestore
-    setState(() {
-      _items = _items
-          .map((n) => _NotifItem(
-                title: n.title,
-                message: n.message,
-                category: n.category,
-                time: n.time,
-                unread: false,
-              ))
-          .toList();
-    });
+  /// One batched write rather than a loop of individual updates — marking a
+  /// full inbox read should cost one round trip, not fifty.
+  Future<void> _markAllRead(String uid) async {
+    try {
+      final unread = await _collection
+          .where('userId', isEqualTo: uid)
+          .where('read', isEqualTo: false)
+          .get();
+      if (unread.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in unread.docs) {
+        batch.update(doc.reference, {'read': true});
+      }
+      await batch.commit();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text(
+            'Could not update your notifications. Please try again.',
+            style: TextStyle(fontFamily: 'DM Sans')),
+        backgroundColor: AppColors.primaryDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        title: const Text(
-          'Notifications',
-          style: TextStyle(
-            fontFamily: 'Syne',
-            fontWeight: FontWeight.w800,
-            fontSize: 20,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        actions: [
-          if (_unreadCount > 0)
-            TextButton(
-              onPressed: _markAllRead,
-              child: const Text(
-                'Mark all read',
-                style: TextStyle(
-                  fontFamily: 'DM Sans',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: AppColors.primary,
-                ),
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _stream(uid),
+      builder: (context, snapshot) {
+        final items =
+            (snapshot.data?.docs ?? const []).map((d) => _toItem(d.data())).toList();
+        final unreadCount = items.where((n) => n.unread).length;
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            backgroundColor: AppColors.background,
+            elevation: 0,
+            title: const Text(
+              'Notifications',
+              style: TextStyle(
+                fontFamily: 'Syne',
+                fontWeight: FontWeight.w800,
+                fontSize: 20,
+                color: AppColors.textPrimary,
               ),
             ),
-        ],
-      ),
-      body: _items.isEmpty
-          ? const _EmptyState()
-          : Column(
-              children: [
-                if (_unreadCount > 0) _UnreadBanner(count: _unreadCount),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) =>
-                        _NotifCard(item: _items[index]),
+            actions: [
+              if (unreadCount > 0)
+                TextButton(
+                  onPressed: () => _markAllRead(uid),
+                  child: const Text(
+                    'Mark all read',
+                    style: TextStyle(
+                      fontFamily: 'DM Sans',
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
-              ],
-            ),
+            ],
+          ),
+          body: !snapshot.hasData
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary))
+              : items.isEmpty
+                  ? const _EmptyState()
+                  : Column(
+                      children: [
+                        if (unreadCount > 0) _UnreadBanner(count: unreadCount),
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                            itemCount: items.length,
+                            itemBuilder: (context, index) =>
+                                _NotifCard(item: items[index]),
+                          ),
+                        ),
+                      ],
+                    ),
+        );
+      },
     );
   }
 }
@@ -223,7 +229,7 @@ class _NotifCard extends StatelessWidget {
   const _NotifCard({required this.item});
 
   String _relativeTime(DateTime t) {
-    final now = DateTime(2026, 8, 4, 8, 0); // TODO: Firebase - use DateTime.now()
+    final now = DateTime.now();
     final diff = now.difference(t);
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';

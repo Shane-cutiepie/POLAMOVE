@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/ride_service.dart';
 import 'ride_status_screen.dart';
 
 class BookingScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class _BookingScreenState extends State<BookingScreen> {
   int _rentHours = 2;
   String? _pickup;
   String? _destination;
+  bool _isBooking = false;
 
   static const double _basefare = 15.0;
   static const double _soloSurcharge = 1.3;
@@ -43,6 +45,44 @@ class _BookingScreenState extends State<BookingScreen> {
       case 'share': return 'PolaShare — $_seats seat${_seats > 1 ? 's' : ''}';
       case 'rent': return 'PolaRent — ${_rentHours}h exclusive rental';
       default: return '';
+    }
+  }
+
+  Future<void> _bookRide() async {
+    if (_pickup == null || _destination == null) return;
+    setState(() => _isBooking = true);
+    try {
+      final rideId = await RideService.createRide(
+        pickup: _pickup!,
+        destination: _destination!,
+        rideTypeShortId: _selectedType,
+        baseFare: _basefare,
+        surcharge: _selectedType == 'solo' ? _basefare * (_soloSurcharge - 1) : 0,
+        seats: _selectedType == 'share' ? _seats : 1,
+        hours: _selectedType == 'rent' ? _rentHours : 0,
+        totalFare: _fare ?? 0,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => RideStatusScreen(
+          rideId: rideId,
+          pickup: _pickup!,
+          destination: _destination!,
+          rideType: _selectedType,
+          fare: _fare ?? 0,
+        ),
+      ));
+    } on RideException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.message, style: const TextStyle(fontFamily: 'DM Sans')),
+          backgroundColor: AppColors.primaryDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isBooking = false);
     }
   }
 
@@ -281,12 +321,8 @@ class _BookingScreenState extends State<BookingScreen> {
       padding: EdgeInsets.fromLTRB(15, 10, 15, MediaQuery.of(context).padding.bottom + 14),
       child: SizedBox(width: double.infinity,
         child: ElevatedButton(
-          onPressed: _pickup != null && _destination != null
-              ? () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => RideStatusScreen(
-                    pickup: _pickup!, destination: _destination!,
-                    rideType: _selectedType, fare: _fare ?? 0,
-                  )))
+          onPressed: (_pickup != null && _destination != null && !_isBooking)
+              ? _bookRide
               : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
@@ -296,8 +332,12 @@ class _BookingScreenState extends State<BookingScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             elevation: 0,
           ),
-          child: const Text('Book Ride Now 🛺', style: TextStyle(fontFamily: 'Syne',
-              fontSize: 15, fontWeight: FontWeight.w700)),
+          child: _isBooking
+              ? const SizedBox(width: 18, height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('Book Ride Now 🛺', style: TextStyle(fontFamily: 'Syne',
+                  fontSize: 15, fontWeight: FontWeight.w700)),
         ),
       ),
     );

@@ -19,9 +19,8 @@ migrate_working_dir/
 .idea/
 
 # The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code. Ignored here so each teammate keeps their own local editor setup.
+.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -43,3 +42,25 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Legacy pub metadata
+.packages
+
+# Build output in any subdirectory (the /build/ rule above is root-only)
+build/
+
+# Signing keys. android/.gitignore already covers android/**; these catch a
+# keystore left anywhere else in the tree.
+*.jks
+*.keystore
+key.properties
+
+# macOS
+**/.DS_Store
+
+# Note: android/.gradle, android/local.properties and ios/Pods are ignored by
+# android/.gitignore and ios/.gitignore respectively.
+#
+# pubspec.lock is intentionally NOT ignored. PolaMove is an application, not a
+# package, so the lockfile is committed to keep all three developers on
+# identical dependency versions.

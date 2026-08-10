@@ -1,43 +1,82 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/services/ride_service.dart';
 import '../role_selection/role_selection_screen.dart';
+import '../shared/change_password_screen.dart';
+import '../shared/edit_profile_screen.dart';
+import '../shared/notification_settings_screen.dart';
 
 class PassengerProfileScreen extends StatelessWidget {
   const PassengerProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: AuthService.userStream(FirebaseAuth.instance.currentUser!.uid),
+      builder: (context, userSnap) {
+        if (userSnap.hasError) {
+          return const Center(child: Text('Could not load profile',
+              style: TextStyle(fontFamily: 'DM Sans',
+                  color: AppColors.textSecondary)));
+        }
+        if (!userSnap.hasData) {
+          return const Center(
+              child: CircularProgressIndicator(color: AppColors.primary));
+        }
+
+        final user = userSnap.data!.data() ?? {};
+        final fullName =
+            '${user['firstName'] ?? '—'} ${user['lastName'] ?? ''}'.trim();
+
+        return _buildBody(
+          context,
+          name: fullName.isEmpty ? '—' : fullName,
+          email: user['email'] ?? '—',
+          phone: user['phone'] ?? '—',
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(BuildContext context, {
+    required String name,
+    required String email,
+    required String phone,
+  }) {
     return Column(children: [
       // Red header with avatar
-      _buildHeader(context),
+      _buildHeader(context, name),
       // Settings list
       Expanded(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(15, 16, 15, 24),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // Stats row
-            Row(children: [
-              _StatCard(emoji: '🛺', value: '5', label: 'Total Rides'),
-              const SizedBox(width: 8),
-              _StatCard(emoji: '💰', value: '₱205', label: 'Total Spent'),
-              const SizedBox(width: 8),
-              _StatCard(emoji: '⭐', value: '4.8', label: 'Rating'),
-            ]),
+            _buildStats(),
             const SizedBox(height: 20),
             // Account section
             _SectionLabel('Account'),
             const SizedBox(height: 8),
             _SettingsCard(items: [
-              _SettingsItem(emoji: '👤', label: 'Edit Profile', onTap: () {}),
-              _SettingsItem(emoji: '📱', label: 'Phone Number', value: '09XX XXX XXXX', onTap: () {}),
-              _SettingsItem(emoji: '🔒', label: 'Change Password', onTap: () {}),
+              _SettingsItem(emoji: '👤', label: 'Edit Profile',
+                  onTap: () => _openEditProfile(context)),
+              _SettingsItem(emoji: '📱', label: 'Phone Number', value: phone,
+                  onTap: () => _openEditProfile(context)),
+              _SettingsItem(emoji: '🔒', label: 'Change Password',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const ChangePasswordScreen()))),
             ]),
             const SizedBox(height: 16),
             // Preferences section
             _SectionLabel('Preferences'),
             const SizedBox(height: 8),
             _SettingsCard(items: [
-              _SettingsItem(emoji: '🔔', label: 'Notifications', onTap: () {}),
+              _SettingsItem(emoji: '🔔', label: 'Notifications',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const NotificationSettingsScreen()))),
               _SettingsItem(emoji: '🗺️', label: 'Default Location', value: 'Polangui Centro', onTap: () {}),
             ]),
             const SizedBox(height: 16),
@@ -78,7 +117,37 @@ class PassengerProfileScreen extends StatelessWidget {
     ]);
   }
 
-  Widget _buildHeader(BuildContext context) {
+  void _openEditProfile(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const EditProfileScreen(isDriver: false)));
+  }
+
+  /// Totals are derived from the passenger's own ride documents — there is no
+  /// stored counter on the user document to drift from.
+  Widget _buildStats() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: RideService.passengerHistory(),
+      builder: (context, rideSnap) {
+        final docs = rideSnap.data?.docs ?? const [];
+        final completed =
+            docs.where((d) => d.data()['status'] == 'completed').toList();
+        final spent = completed.fold<double>(
+            0, (acc, d) => acc + (d.data()['totalFare'] ?? 0).toDouble());
+
+        return Row(children: [
+          _StatCard(emoji: '🛺', value: '${completed.length}', label: 'Total Rides'),
+          const SizedBox(width: 8),
+          _StatCard(emoji: '💰', value: '₱${spent.toStringAsFixed(0)}',
+              label: 'Total Spent'),
+          const SizedBox(width: 8),
+          // TODO: Firebase rating system not yet implemented
+          _StatCard(emoji: '⭐', value: '—', label: 'Rating'),
+        ]);
+      },
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, String name) {
     return Container(
       color: AppColors.primary,
       child: Stack(children: [
@@ -97,7 +166,7 @@ class PassengerProfileScreen extends StatelessWidget {
                 child: const Center(child: Text('👤', style: TextStyle(fontSize: 28)))),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Juan dela Cruz', style: TextStyle(fontFamily: 'Syne',
+                Text(name, style: const TextStyle(fontFamily: 'Syne',
                     fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
                 const SizedBox(height: 2),
                 Text('Passenger · Polangui',
@@ -105,7 +174,7 @@ class PassengerProfileScreen extends StatelessWidget {
               ])),
               // Edit button
               GestureDetector(
-                onTap: () {},
+                onTap: () => _openEditProfile(context),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
@@ -148,7 +217,10 @@ class PassengerProfileScreen extends StatelessWidget {
           const SizedBox(height: 22),
           SizedBox(width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
+                Navigator.pop(context);
+                await AuthService.logOut();
+                if (!context.mounted) return;
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
                   (route) => false,
