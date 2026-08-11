@@ -120,6 +120,7 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .sc-val{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--t1);line-height:1}
 .sc-lbl{font-size:11px;font-weight:600;color:var(--t2);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
 .sc-sub{font-size:11px;color:var(--t3);margin-top:6px}
+.sc-sub.err{color:var(--rl)}   /* stat card failed to load — see dashboard_stats.js */
 .sc-bar{position:absolute;bottom:0;left:0;right:0;height:2px}
 .sc-bar.red{background:linear-gradient(90deg,var(--rl),transparent)}
 .sc-bar.grn{background:linear-gradient(90deg,var(--grn2),transparent)}
@@ -143,7 +144,10 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .card-body{padding:16px}
 
 /* ══ MAP ══ */
-#adm-map{height:240px}
+#adm-map{height:240px;position:relative}
+/* Live map status line — sits over the map, never replaces it. */
+.map-status{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:800;background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);padding:7px 13px;font-size:11px;font-weight:600;color:var(--t2);white-space:nowrap;pointer-events:none;box-shadow:var(--shadow);display:none}
+.map-status.show{display:block}
 .leaflet-control-container .leaflet-top,.leaflet-control-container .leaflet-bottom{display:none}
 
 /* ══ TABLE ══ */
@@ -221,6 +225,9 @@ tbody tr:hover td{background:var(--s2)}
 .modal-ov.show{opacity:1;pointer-events:all}
 .modal-box{background:var(--s1);border:1px solid var(--b2);border-radius:var(--rXL);padding:26px;width:440px;max-width:90vw;animation:modalIn .28s cubic-bezier(.34,1.2,.64,1);box-shadow:0 20px 60px rgba(0,0,0,.6)}
 @keyframes modalIn{from{opacity:0;transform:scale(.92) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+/* Opt-in size modifiers — only the driver-application modals use these. */
+.modal-box.wide{width:640px}
+.modal-box.tall{max-height:86vh;overflow-y:auto}
 .modal-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}
 .modal-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:var(--t1)}
 .modal-sub{font-size:12px;color:var(--t2);margin-top:3px}
@@ -586,32 +593,36 @@ tbody tr:hover td{background:var(--s2)}
     <!-- ════ DASHBOARD ════ -->
     <div class="view on" id="view-dashboard">
       <div class="stat-grid">
+        <!-- Values are written by admin/dashboard_stats.js from live Firestore
+             data. The placeholders below are deliberately blank, not demo
+             numbers, so a Firebase failure never shows a plausible-looking
+             figure. -->
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon red">🛺</div><div class="sc-trend up">↑ 2 now</div></div>
-          <div class="sc-val" id="s-drivers">12</div>
+          <div class="sc-top"><div class="sc-icon red">🛺</div><div class="sc-trend up" id="s-drivers-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-drivers">…</div>
           <div class="sc-lbl">Active Drivers</div>
-          <div class="sc-sub">8 online · 4 offline</div>
+          <div class="sc-sub" id="s-drivers-sub">Loading…</div>
           <div class="sc-bar red"></div>
         </div>
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon grn">🧍</div><div class="sc-trend up">↑ 5 today</div></div>
-          <div class="sc-val" id="s-passengers">38</div>
+          <div class="sc-top"><div class="sc-icon grn">🧍</div><div class="sc-trend up" id="s-passengers-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-passengers">…</div>
           <div class="sc-lbl">Registered Passengers</div>
-          <div class="sc-sub">3 active rides now</div>
+          <div class="sc-sub" id="s-passengers-sub">Loading…</div>
           <div class="sc-bar grn"></div>
         </div>
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon amb">🏁</div><div class="sc-trend up">↑ 6 vs yest.</div></div>
-          <div class="sc-val" id="s-trips">24</div>
+          <div class="sc-top"><div class="sc-icon amb">🏁</div><div class="sc-trend up" id="s-trips-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-trips">…</div>
           <div class="sc-lbl">Trips Today</div>
-          <div class="sc-sub">18 completed · 2 active</div>
+          <div class="sc-sub" id="s-trips-sub">Loading…</div>
           <div class="sc-bar amb"></div>
         </div>
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon blu">💰</div><div class="sc-trend up">↑ ₱120</div></div>
-          <div class="sc-val" id="s-revenue">₱480</div>
+          <div class="sc-top"><div class="sc-icon blu">💰</div><div class="sc-trend up" id="s-revenue-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-revenue">…</div>
           <div class="sc-lbl">Revenue Today</div>
-          <div class="sc-sub">Cash · No digital payment</div>
+          <div class="sc-sub" id="s-revenue-sub">Loading…</div>
           <div class="sc-bar blu"></div>
         </div>
       </div>
@@ -623,23 +634,28 @@ tbody tr:hover td{background:var(--s2)}
             <div class="card-title">📍 Live Ride Monitoring — Polangui, Albay <div class="live-indicator" style="font-size:10px;padding:3px 9px"><div class="live-dot"></div>LIVE</div></div>
             <div class="card-action" onclick="navTo('rides')">View All Rides</div>
           </div>
-          <div id="adm-map"></div>
+          <!-- #map-status reports what is NOT on the map (loading, no active
+               rides, missing driver location). The map itself always stays. -->
+          <div id="adm-map"><div class="map-status show" id="map-status">Loading active rides…</div></div>
         </div>
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:14px">
           <div class="card">
             <div class="card-hdr"><div class="card-title">🚖 Ride Type Split</div></div>
             <div class="card-body">
+              <!-- Arc lengths and percentages are set by renderRideTypeSplit()
+                   in dashboard_stats.js from today's /rides. Arcs start at
+                   zero length so no demo split is ever shown. -->
               <div class="donut-wrap">
                 <svg class="donut-svg" width="80" height="80" viewBox="0 0 80 80">
                   <circle cx="40" cy="40" r="28" fill="none" stroke="var(--s3)" stroke-width="12"/>
-                  <circle cx="40" cy="40" r="28" fill="none" stroke="var(--red)" stroke-width="12" stroke-dasharray="105 71" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
-                  <circle cx="40" cy="40" r="28" fill="none" stroke="var(--grn2)" stroke-width="12" stroke-dasharray="71 105" stroke-dashoffset="-105" transform="rotate(-90 40 40)"/>
-                  <text x="40" y="44" text-anchor="middle" font-size="12" font-family="Syne" font-weight="800" fill="var(--t1)">63%</text>
+                  <circle id="rt-arc-solo"  cx="40" cy="40" r="28" fill="none" stroke="var(--red)"  stroke-width="12" stroke-dasharray="0 175.93" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
+                  <circle id="rt-arc-share" cx="40" cy="40" r="28" fill="none" stroke="var(--grn2)" stroke-width="12" stroke-dasharray="0 175.93" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
+                  <text id="rt-center" x="40" y="44" text-anchor="middle" font-size="12" font-family="Syne" font-weight="800" fill="var(--t1)">—</text>
                 </svg>
                 <div class="donut-legend">
-                  <div class="dl-item"><div class="dl-dot" style="background:var(--red)"></div><div class="dl-lbl">PolaSolo</div><div class="dl-val">63%</div></div>
-                  <div class="dl-item"><div class="dl-dot" style="background:var(--grn2)"></div><div class="dl-lbl">PolaShare</div><div class="dl-val">37%</div></div>
+                  <div class="dl-item"><div class="dl-dot" style="background:var(--red)"></div><div class="dl-lbl">PolaSolo</div><div class="dl-val" id="rt-solo-val">—</div></div>
+                  <div class="dl-item"><div class="dl-dot" style="background:var(--grn2)"></div><div class="dl-lbl">PolaShare</div><div class="dl-val" id="rt-share-val">—</div></div>
                 </div>
               </div>
             </div>
@@ -669,7 +685,8 @@ tbody tr:hover td{background:var(--s2)}
         <div class="card">
           <div class="card-hdr"><div class="card-title">🗺️ Top Routes Today</div></div>
           <div class="card-body">
-            <div class="bar-chart" id="top-routes-chart"></div>
+            <!-- Rows are built by renderTopRoutes() in dashboard_stats.js. -->
+            <div class="bar-chart" id="top-routes-chart"><div class="empty-state"><div class="es-icon">⏳</div><div class="es-title">Loading top routes…</div></div></div>
           </div>
         </div>
       </div>
@@ -845,7 +862,9 @@ tbody tr:hover td{background:var(--s2)}
 
 <!-- ══ APPROVE MODAL ══ -->
 <div class="modal-ov" id="approve-modal">
-  <div class="modal-box">
+  <!-- Every value below is filled by openDriverApplication() from the live
+       drivers/{uid} + users/{uid} documents. No demo applicants. -->
+  <div class="modal-box tall">
     <div class="modal-hdr">
       <div>
         <div class="modal-title">👨‍✈️ Driver Registration Review</div>
@@ -856,34 +875,79 @@ tbody tr:hover td{background:var(--s2)}
     <div class="modal-row">
       <div class="modal-field">
         <div class="modal-lbl">Full Name</div>
-        <div class="modal-val"><span class="mv-ico">👤</span>Roberto Santos</div>
+        <div class="modal-val"><span class="mv-ico">👤</span><span id="am-name">—</span></div>
       </div>
       <div class="modal-field">
         <div class="modal-lbl">Phone Number</div>
-        <div class="modal-val"><span class="mv-ico">📞</span>0917-123-4567</div>
+        <div class="modal-val"><span class="mv-ico">📞</span><span id="am-phone">—</span></div>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <div class="modal-lbl">Email Address</div>
+        <div class="modal-val"><span class="mv-ico">✉️</span><span id="am-email">—</span></div>
+      </div>
+      <div class="modal-field">
+        <div class="modal-lbl">Barangay</div>
+        <div class="modal-val"><span class="mv-ico">🏘️</span><span id="am-barangay">—</span></div>
       </div>
     </div>
     <div class="modal-row">
       <div class="modal-field">
         <div class="modal-lbl">Tricycle Plate No.</div>
-        <div class="modal-val"><span class="mv-ico">🛺</span>POLO-5678</div>
+        <div class="modal-val"><span class="mv-ico">🛺</span><span id="am-plate">—</span></div>
       </div>
       <div class="modal-field">
         <div class="modal-lbl">Driver's License No.</div>
-        <div class="modal-val"><span class="mv-ico">🪪</span>N07-23-123456</div>
+        <div class="modal-val"><span class="mv-ico">🪪</span><span id="am-license">—</span></div>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <div class="modal-lbl">License Expiry</div>
+        <div class="modal-val"><span class="mv-ico">📅</span><span id="am-expiry">—</span></div>
+      </div>
+      <div class="modal-field">
+        <div class="modal-lbl">Submitted</div>
+        <div class="modal-val"><span class="mv-ico">🕐</span><span id="am-submitted">—</span></div>
       </div>
     </div>
     <div class="modal-field">
       <div class="modal-lbl">Preferred Route</div>
-      <div class="modal-val"><span class="mv-ico">🗺️</span>Centro – Bus Terminal</div>
+      <div class="modal-val"><span class="mv-ico">🗺️</span><span id="am-route">—</span></div>
+    </div>
+    <div class="modal-field">
+      <div class="modal-lbl">Submitted Documents</div>
+      <div id="am-docs"></div>
     </div>
     <div class="modal-field">
       <div class="modal-lbl">Registration Status</div>
-      <div class="modal-val"><span class="badge pending">Pending Approval</span></div>
+      <div class="modal-val"><span class="badge pending" id="am-status">pending</span></div>
     </div>
     <div class="modal-actions">
       <button class="modal-approve" onclick="approveDriver()">✓ Approve Driver</button>
       <button class="modal-reject" onclick="rejectDriver()">✗ Reject</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PENDING DRIVER APPLICATIONS ══
+     Opened by the "Approve Driver" quick action. Rows come from the live
+     /drivers snapshot filtered to status === 'pending'. -->
+<div class="modal-ov" id="pending-modal">
+  <div class="modal-box wide tall">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">👨‍✈️ Pending Driver Applications</div>
+        <div class="modal-sub">Newest first · updates live as drivers apply</div>
+      </div>
+      <div class="modal-x" onclick="closePendingModal()">✕</div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Driver</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+        <tbody id="pending-tb"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -1015,6 +1079,12 @@ let DRIVERS=[
   {name:'Roberto Santos', plate:'POLO-5678',route:'Centro – Terminal', trips:0,  rating:0,  status:'pending'},
 ];
 
+/* Pending driver applications. Filled by polamove_admin_firebase.js from the
+   live /drivers snapshot — starts empty on purpose, there are no demo
+   applicants. PENDING_STATE: 'loading' | 'ready' | 'error'. */
+let PENDING=[];
+let PENDING_STATE='loading';
+
 let PASSENGERS=[
   {name:'Maria Santos',   phone:'0917-123-4567',rides:18,solo:11,share:7, spent:360},
   {name:'Juan Dela Cruz', phone:'0918-234-5678',rides:7, solo:5, share:2, spent:140},
@@ -1024,15 +1094,12 @@ let PASSENGERS=[
   {name:'Marco Villanueva',phone:'0922-678-9012',rides:6,solo:4, share:2, spent:115},
 ];
 
-let RIDES=[
-  {id:'PM-001',pass:'Maria Santos',  drv:'Carlos Reyes', from:'Centro',to:'Public Market',  type:'PolaSolo',  seats:1,fare:15,  status:'done',     time:'2:14 PM'},
-  {id:'PM-002',pass:'Juan Dela Cruz',drv:'Jose Mendoza', from:'Centro',to:'Bus Terminal',   type:'PolaShare', seats:3,fare:45,  status:'active',   time:'2:31 PM'},
-  {id:'PM-003',pass:'Ana Reyes',     drv:'Carlos Reyes', from:'LCC Mall',to:'Hospital',     type:'PolaSolo',  seats:1,fare:20,  status:'active',   time:'2:38 PM'},
-  {id:'PM-004',pass:'Paolo Bautista',drv:'Ronaldo Cruz', from:'Centro',to:'Bicol Univ.',    type:'PolaShare', seats:4,fare:80,  status:'done',     time:'1:55 PM'},
-  {id:'PM-005',pass:'Liza Garcia',   drv:'Jose Mendoza', from:'Market', to:'Centro',        type:'PolaSolo',  seats:1,fare:15,  status:'cancelled',time:'1:30 PM'},
-  {id:'PM-006',pass:'Marco Villanueva',drv:'Danilo Reyes',from:'Centro',to:'Liboro',        type:'PolaSolo',  seats:1,fare:25,  status:'done',     time:'12:45 PM'},
-  {id:'PM-007',pass:'Ana Reyes',     drv:'Ernesto Bato', from:'Centro',to:'Hospital',       type:'PolaShare', seats:2,fare:50,  status:'done',     time:'11:20 AM'},
-];
+/* Live from /rides. polamove_admin_firebase.js fills this from the Firestore
+   listener (requestedAt desc). Empty on purpose — no demo rides are ever
+   shown, including when Firebase is unreachable.
+   RIDES_STATE: 'loading' | 'ready' | 'error'. */
+let RIDES=[];
+let RIDES_STATE='loading';
 
 const ROUTES_FARE=[
   {key:'centro-market',   label:'Centro → Public Market',   zone:'Centro'},
@@ -1058,24 +1125,10 @@ function initAdmMap(){
   if(admMap)return;
   admMap=L.map('adm-map',{zoomControl:true,attributionControl:false}).setView(CENTER,15);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(admMap);
-  // Place drivers
-  const trikes=[
-    {lat:13.2931,lng:123.4879,plate:'POLO-1234',status:'online',name:'Carlos Reyes'},
-    {lat:13.2944,lng:123.4864,plate:'POLO-2345',status:'online',name:'Jose Mendoza'},
-    {lat:13.2970,lng:123.4885,plate:'POLO-5599',status:'online',name:'Danilo Reyes'},
-    {lat:13.2905,lng:123.4915,plate:'POLO-3456',status:'offline',name:'Ronaldo Cruz'},
-    {lat:13.2885,lng:123.4842,plate:'POLO-4567',status:'offline',name:'Ernesto Bato'},
-    // Active rides
-    {lat:13.2910,lng:123.4880,plate:'POLO-2345',status:'active',name:'Active: Centro→Terminal'},
-    {lat:13.2880,lng:123.4910,plate:'POLO-1234',status:'active',name:'Active: LCC→Hospital'},
-  ];
-  trikes.forEach(t=>{
-    const opacity=t.status==='offline'?0.4:1;
-    const emoji=t.status==='active'?'🔴':t.status==='online'?'🛺':'⚫';
-    const ico=L.divIcon({html:`<div style="font-size:${t.status==='active'?18:16}px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5));opacity:${opacity}">${emoji}</div>`,iconAnchor:[9,18],className:''});
-    L.marker([t.lat,t.lng],{icon:ico}).addTo(admMap).bindPopup(`<b>${t.plate}</b><br>${t.name}<br><b>${t.status.toUpperCase()}</b>`);
-  });
-  // Animate active ride markers slightly
+  /* Markers are owned by live_map.js, which plots the driver of every
+     in-progress ride from drivers/{uid}.location. Painting once here covers
+     the case where the Firestore snapshots arrived before Leaflet was up. */
+  if(window.renderLiveMap)window.renderLiveMap();
   setTimeout(()=>admMap.invalidateSize(),200);
 }
 
@@ -1154,30 +1207,39 @@ function buildTables(v){
   if(v==='dashboard'){buildDashRides();buildTopRoutes();}
 }
 
+/* Recent Rides — the five newest bookings by requestedAt, straight from the
+   /rides listener. r.statusLabel is display text only; the untouched Firestore
+   value stays on r.rawStatus, and r.status is just the badge colour bucket. */
 function buildDashRides(){
-  document.getElementById('dash-rides-tb').innerHTML=sortRides(RIDES).slice(0,5).map(r=>`
+  const tb=document.getElementById('dash-rides-tb');
+  if(!tb)return;
+
+  if(RIDES_STATE==='loading')
+    return void(tb.innerHTML=rideStateRow('⏳','Loading recent rides…'));
+  if(RIDES_STATE==='error')
+    return void(tb.innerHTML=rideStateRow('⚠️','Unable to load recent rides','Check your connection and try again.'));
+  if(!RIDES.length)
+    return void(tb.innerHTML=rideStateRow('🛺','No rides yet','Bookings appear here as they come in.'));
+
+  const recent=[...RIDES].sort((a,b)=>b.requestedAtMs-a.requestedAtMs).slice(0,5);
+  tb.innerHTML=recent.map(r=>`
     <tr>
       <td><div class="td-bold">${r.pass}</div></td>
       <td><div style="font-size:12px">${r.from} → ${r.to}</div></td>
       <td><span class="badge ${r.type==='PolaSolo'?'active':'online'}">${r.type==='PolaSolo'?'🚖':'👥'} ${r.type}</span></td>
       <td class="td-mono" style="color:var(--grn2)">₱${r.fare}</td>
-      <td><span class="badge ${r.status}">${r.status}</span></td>
+      <td><span class="badge ${r.status}">${r.statusLabel}</span></td>
     </tr>`).join('');
 }
+
+function rideStateRow(icon,title,sub=''){
+  return `<tr><td colspan="5"><div class="empty-state"><div class="es-icon">${icon}</div><div class="es-title">${title}</div>${sub?`<div class="es-sub">${sub}</div>`:''}</div></td></tr>`;
+}
+/* Ride Type Split + Top Routes Today are computed in dashboard_stats.js from
+   the same today's-rides listener the stat cards use, so there is nothing to
+   render here — this just re-paints them when the dashboard is shown. */
 function buildTopRoutes(){
-  const routes=[
-    {label:'Centro → Market',val:42,max:42},
-    {label:'Centro → Terminal',val:38,max:42},
-    {label:'Centro → Hospital',val:24,max:42},
-    {label:'Centro → Bicol Univ.',val:21,max:42},
-    {label:'Centro → Liboro',val:17,max:42,grn:true},
-  ];
-  document.getElementById('top-routes-chart').innerHTML=routes.map(r=>`
-    <div class="bar-row">
-      <div class="bar-lbl">${r.label}</div>
-      <div class="bar-track"><div class="bar-fill${r.grn?' grn':''}" style="width:${Math.round(r.val/r.max*100)}%"></div></div>
-      <div class="bar-val">${r.val}</div>
-    </div>`).join('');
+  if(window.renderDashboardCharts)window.renderDashboardCharts();
 }
 
 /* Sort priority: in-progress rides first (most likely to complete next),
@@ -1293,25 +1355,118 @@ function saveSurcharge(){
    polamove_admin_firebase.js — they write drivers/{uid}.status to Firestore,
    which the mobile app streams live. Do not redefine them here. */
 
+/* ══ DRIVER APPLICATIONS ══
+   "Approve Driver" opens the full pending queue; each row can then be
+   inspected in the existing registration-review modal before approving. */
+
+/* uid of the application currently open in the review modal */
+let currentApplicationUid=null;
+
+function openApproveModal(){
+  document.getElementById('pending-modal').classList.add('show');
+  buildPendingTable();
+}
+function closePendingModal(){document.getElementById('pending-modal').classList.remove('show');}
+
+/* Re-rendered by polamove_admin_firebase.js on every /drivers snapshot, so a
+   driver who applies (or gets approved) appears/disappears on its own. */
+function buildPendingTable(){
+  const tb=document.getElementById('pending-tb');
+  if(!tb)return;
+
+  if(PENDING_STATE==='loading')
+    return void(tb.innerHTML=pendingStateRow('⏳','Loading driver applications…'));
+  if(PENDING_STATE==='error')
+    return void(tb.innerHTML=pendingStateRow('⚠️','Unable to load driver applications','Check your connection, then reopen this window.'));
+  if(!PENDING.length)
+    return void(tb.innerHTML=pendingStateRow('✅','No pending driver applications','New applications appear here automatically.'));
+
+  tb.innerHTML=PENDING.map(d=>`
+    <tr>
+      <td><div class="td-bold">${d.name}</div></td>
+      <td><span class="badge pending">${d.status}</span></td>
+      <td class="td-mono" style="color:var(--t3)">${d.submittedLabel}</td>
+      <td style="display:flex;gap:5px;padding:8px 14px">
+        <button class="act-btn view" onclick="openDriverApplication('${d.uid}')">📄 View Application</button>
+        <button class="act-btn approve" onclick="approvePendingDriver('${d.uid}')">✓ Approve</button>
+      </td>
+    </tr>`).join('');
+}
+
+function pendingStateRow(icon,title,sub=''){
+  return `<tr><td colspan="4"><div class="empty-state"><div class="es-icon">${icon}</div><div class="es-title">${title}</div>${sub?`<div class="es-sub">${sub}</div>`:''}</div></td></tr>`;
+}
+
 /* ══ MODAL ══ */
-function openApproveModal(){document.getElementById('approve-modal').classList.add('show');}
-function closeModal(){document.getElementById('approve-modal').classList.remove('show');}
+/* Opens the existing registration-review modal for one application. */
+function openDriverApplication(uid){
+  const d=PENDING.find(x=>x.uid===uid);
+  if(!d){showToast('That application is no longer pending.','amb');return;}
+  currentApplicationUid=uid;
+
+  const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+  set('am-name',d.name);
+  set('am-phone',d.phone);
+  set('am-email',d.email);
+  set('am-barangay',d.barangay);
+  set('am-plate',d.plate);
+  set('am-license',d.licenseNo);
+  set('am-expiry',d.licenseExpiry);
+  set('am-submitted',d.submittedLabel);
+  set('am-route',d.route);
+  set('am-status',d.status);
+
+  /* Document photos are still device-local paths (documentsStoredLocally),
+     so say so rather than rendering a link that cannot open. */
+  document.getElementById('am-docs').innerHTML=
+    d.documents.map(doc=>`
+      <div class="modal-val" style="margin-bottom:6px">
+        <span class="mv-ico">📎</span>
+        <span style="flex:1">${doc.label}</span>
+        ${doc.url
+          ? `<a href="${doc.url}" target="_blank" rel="noopener" style="color:var(--grn2);font-size:12px;font-weight:700;text-decoration:none">Open ↗</a>`
+          : `<span style="color:var(--t3);font-size:11px;font-weight:600">Not viewable here</span>`}
+      </div>`).join('')
+    +(d.storedLocally
+      ? `<div class="es-sub" style="text-align:left">Photos are saved on the driver's device, not Cloud Storage — verify them in person until the Storage migration lands.</div>`
+      : '');
+
+  document.getElementById('approve-modal').classList.add('show');
+}
+
+function closeModal(){
+  document.getElementById('approve-modal').classList.remove('show');
+  currentApplicationUid=null;
+}
+
+/* Approve straight from a queue row. */
+function approvePendingDriver(uid){
+  const d=PENDING.find(x=>x.uid===uid);
+  if(!d){showToast('That application is no longer pending.','amb');return;}
+  if(!window.approveDriverByUid){showToast('Not connected to Firebase.','red');return;}
+  window.approveDriverByUid(uid,d.name);
+}
+
+/* Approve / reject the application open in the review modal. Both write to the
+   existing drivers/{uid} document — see setDriverStatus() in the Firebase layer. */
 function approveDriver(){
-  const d=DRIVERS.find(x=>x.status==='pending');
-  if(d&&window.approveDriverByUid){
-    window.approveDriverByUid(d.uid,d.name);
+  const uid=currentApplicationUid;
+  const d=PENDING.find(x=>x.uid===uid);
+  if(uid&&d&&window.approveDriverByUid){
+    window.approveDriverByUid(uid,d.name);
   }else{
-    showToast('No pending applications.','amb');
+    showToast('No application selected.','amb');
   }
   closeModal();
 }
 
 function rejectDriver(){
-  const d=DRIVERS.find(x=>x.status==='pending');
-  if(d&&window.rejectDriverByUid){
-    window.rejectDriverByUid(d.uid,d.name);
+  const uid=currentApplicationUid;
+  const d=PENDING.find(x=>x.uid===uid);
+  if(uid&&d&&window.rejectDriverByUid){
+    window.rejectDriverByUid(uid,d.name);
   }else{
-    showToast('No pending applications.','amb');
+    showToast('No application selected.','amb');
   }
   closeModal();
 }
@@ -1337,10 +1492,15 @@ document.addEventListener('DOMContentLoaded',()=>{
   buildDashRides();
   buildTopRoutes();
   setTimeout(()=>{initAdmMap();},400);
-  // Keyboard shortcut: Escape closes modal
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+  // Keyboard shortcut: Escape closes the topmost modal
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    if(document.getElementById('approve-modal').classList.contains('show'))closeModal();
+    else closePendingModal();
+  });
   // Click outside modal closes it
-  document.getElementById('approve-modal').addEventListener('click',e=>{if(e.target===document.getElementById('approve-modal'))closeModal();});
+  document.getElementById('approve-modal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+  document.getElementById('pending-modal').addEventListener('click',e=>{if(e.target===e.currentTarget)closePendingModal();});
 });
 </script>
 <script type="module" src="polamove_admin_firebase.js"></script>

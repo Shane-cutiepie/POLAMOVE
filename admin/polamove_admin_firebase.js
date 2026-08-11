@@ -18,6 +18,13 @@ import {
   getFirestore, collection, doc, getDoc, onSnapshot,
   updateDoc, serverTimestamp, addDoc, query, orderBy, limit
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  startDashboardStats, stopDashboardStats, applyDriversSnapshot,
+  applyUsersSnapshot, applyActiveRidesNow, reportDashboardError
+} from './dashboard_stats.js';
+import {
+  startLiveMap, stopLiveMap, applyLiveMapDrivers, reportLiveMapError
+} from './live_map.js';
 
 /* ── CONFIG ────────────────────────────────────────────────
    Copy these values from lib/firebase_options.dart in your
@@ -64,6 +71,15 @@ window.adminSignIn = async function (email, password) {
 window.adminSignOut = function () {
   unsubscribers.forEach(u => u());
   unsubscribers = [];
+  stopDashboardStats();
+  stopLiveMap();
+
+  // Drop cached rows so the next admin never sees the previous session's data.
+  PENDING.length = 0;
+  PENDING_STATE = 'loading';
+  RIDES.length = 0;
+  RIDES_STATE = 'loading';
+
   return signOut(auth);
 };
 
@@ -84,21 +100,36 @@ window.adminAuthError = function (err) {
 /**
  * Attaches all Firestore listeners. Call once after a
  * successful admin sign-in.
+ *
+ * Both the login handler and onAuthStateChanged call this on a fresh
+ * sign-in, so it guards against attaching every listener twice.
  */
 window.startLiveData = function () {
+  if (unsubscribers.length) return;
+
   // users — cached first so driver/ride rows can resolve names
   unsubscribers.push(onSnapshot(collection(db, 'users'), snap => {
     usersById.clear();
     snap.forEach(d => usersById.set(d.id, d.data()));
     refreshPassengers(snap);
+    applyUsersSnapshot(snap);
     // Re-render anything that depends on names
     if (window._driverSnap) refreshDrivers(window._driverSnap);
     if (window._rideSnap)   refreshRides(window._rideSnap);
+  }, err => {
+    console.warn('users listener:', err.message);
+    reportDashboardError('passengers', err);
   }));
 
   unsubscribers.push(onSnapshot(collection(db, 'drivers'), snap => {
     window._driverSnap = snap;
     refreshDrivers(snap);
+  }, err => {
+    console.warn('drivers listener:', err.message);
+    reportDashboardError('drivers', err);
+    reportLiveMapError(err);
+    PENDING_STATE = 'error';
+    if (typeof buildPendingTable === 'function') buildPendingTable();
   }));
 
   unsubscribers.push(onSnapshot(
@@ -109,14 +140,30 @@ window.startLiveData = function () {
     },
     // An index error here is normal on first run — Firestore prints a
     // clickable link in the browser console that creates it.
-    err => console.warn('rides listener:', err.message)
+    err => {
+      console.warn('rides listener:', err.message);
+      reportDashboardError('rides', err);
+      RIDES_STATE = 'error';
+      if (typeof buildDashRides === 'function') buildDashRides();
+    }
   ));
+
+  // Trips / Revenue Today — its own day-scoped listener, because the rides
+  // listener above is capped at 50 rows and can't be trusted for a total.
+  startDashboardStats(db);
+
+  // Live Ride Monitoring — listens to in-progress rides only; driver positions
+  // come from the /drivers snapshot above, so no per-driver listeners.
+  startLiveMap(db);
 };
 
-function fullName(uid) {
+/* Resolves users/{uid} out of the cache the users listener keeps warm — one
+   collection read for every name on screen, never a read per row.
+   `fallback` covers deleted or not-yet-loaded accounts. */
+function fullName(uid, fallback = '—') {
   const u = usersById.get(uid);
-  if (!u) return '—';
-  return `${u.firstName || ''} ${u.lastName || ''}`.trim() || '—';
+  if (!u) return fallback;
+  return `${u.firstName || ''} ${u.lastName || ''}`.trim() || fallback;
 }
 
 /* ── Drivers ───────────────────────────────────────────────
@@ -125,6 +172,13 @@ function fullName(uid) {
      { name, plate, route, trips, rating, status, uid }
    status: 'pending' | 'online' | 'offline'                  */
 function refreshDrivers(snap) {
+  // Dashboard reads the raw snapshot — it needs the untouched status/isOnline
+  // fields, not the table's collapsed pending/online/offline view.
+  applyDriversSnapshot(snap);
+  // Live map gets positions from this same snapshot, so tracking a driver
+  // costs no reads beyond the registry listener that was already running.
+  applyLiveMapDrivers(buildDriverDirectory(snap));
+
   DRIVERS.length = 0;
 
   snap.forEach(d => {
@@ -151,7 +205,101 @@ function refreshDrivers(snap) {
     badge.style.display = pending > 0 ? '' : 'none';
   }
 
+  refreshPendingApplications(snap);
+
   if (typeof buildDriversTable === 'function') buildDriversTable(DRIVERS);
+}
+
+/* ── Driver directory (live map) ───────────────────────────
+   Flattens drivers/{uid} into what the map needs. `location` is a Firestore
+   GeoPoint — its latitude/longitude are read directly, and no lat/lng fields
+   are invented. Drivers who are offline have had it cleared to null by
+   LocationService.clearLocation(), which lands here as lat/lng = null.       */
+function buildDriverDirectory(snap) {
+  const directory = new Map();
+
+  snap.forEach(d => {
+    const v = d.data();
+    const point = v.location;
+
+    directory.set(d.id, {
+      name:        fullName(d.id, 'Unknown Driver'),
+      status:      v.status || null,
+      isOnline:    v.isOnline === true,
+      lat:         typeof point?.latitude  === 'number' ? point.latitude  : null,
+      lng:         typeof point?.longitude === 'number' ? point.longitude : null,
+      approximate: v.locationApproximate === true,
+      updatedAt:   v.locationUpdatedAt?.toDate?.() || null,
+    });
+  });
+
+  return directory;
+}
+
+/* ── Pending applications ──────────────────────────────────
+   The admin's approval queue. Derived from the same /drivers
+   snapshot the registry table uses — no second listener, and
+   no /pendingDrivers collection.
+
+   'pending' and 'approved' are the exact values written by
+   lib/core/services/auth_service.dart on driver sign-up.     */
+function refreshPendingApplications(snap) {
+  PENDING.length = 0;
+
+  snap.forEach(d => {
+    const v = d.data();
+    if (v.status !== 'pending') return;
+
+    // Name/contact live in users/{uid} only — never duplicated into drivers.
+    const u = usersById.get(d.id) || {};
+    const submitted = v.submittedAt?.toDate?.() || null;
+
+    PENDING.push({
+      uid:            d.id,
+      name:           fullName(d.id),
+      status:         v.status,
+      submitted,
+      submittedLabel: submitted ? formatDate(submitted) : 'Date unknown',
+      phone:          u.phone || '—',
+      email:          u.email || '—',
+      barangay:       u.barangay || '—',
+      plate:          v.plateNo || '—',
+      licenseNo:      v.licenseNo || '—',
+      licenseExpiry:  v.licenseExpiry || '—',
+      route:          v.preferredRoute || '—',
+      documents: [
+        { label: "Driver's License",   url: webUrl(v.documents?.licenseUrl) },
+        { label: 'OR / CR',            url: webUrl(v.documents?.orcrUrl) },
+        { label: 'Barangay Clearance', url: webUrl(v.documents?.barangayClearanceUrl) },
+      ],
+      storedLocally: v.documentsStoredLocally === true,
+    });
+  });
+
+  // Newest first. An application with no submittedAt can't be ordered, so it
+  // sorts last rather than being dropped out of the queue entirely.
+  PENDING.sort((a, b) => {
+    if (!a.submitted && !b.submitted) return 0;
+    if (!a.submitted) return 1;
+    if (!b.submitted) return -1;
+    return b.submitted - a.submitted;
+  });
+
+  PENDING_STATE = 'ready';
+  if (typeof buildPendingTable === 'function') buildPendingTable();
+}
+
+/* Only http(s) URLs can be opened from the admin browser. The mobile app
+   currently stores device-local paths (documentsStoredLocally: true) because
+   Cloud Storage needs the Blaze plan — a link to one of those would 404, so
+   the review modal says "not viewable here" instead. */
+function webUrl(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : null;
+}
+
+function formatDate(d) {
+  return d.toLocaleDateString('en-PH',
+    { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 /* ── Passengers ────────────────────────────────────────────
@@ -189,7 +337,7 @@ function refreshRides(snap) {
 
     RIDES.push({
       id:     'PM-' + d.id.slice(0, 5).toUpperCase(),
-      pass:   fullName(v.passengerId),
+      pass:   fullName(v.passengerId, 'Unknown Passenger'),
       drv:    v.driverId ? fullName(v.driverId) : 'Searching…',
       from:   v.pickup?.name || '—',
       to:     v.dropoff?.name || '—',
@@ -197,14 +345,24 @@ function refreshRides(snap) {
       seats:  v.seats || 1,
       fare:   v.totalFare || 0,
       status,
+      // The Firestore value, kept verbatim, plus a label for display. The
+      // `status` above stays a colour bucket so the badge CSS and the Rides
+      // page filters keep working unchanged.
+      rawStatus:   v.status || 'unknown',
+      statusLabel: rideStatusLabel(v.status),
       time:   formatTime(v.requestedAt),
+      requestedAtMs: v.requestedAt?.toDate?.()?.getTime() || 0,
       passengerId: v.passengerId,
     });
   });
 
+  RIDES_STATE = 'ready';
+
   rollUpPassengerStats();
 
   const activeCount = RIDES.filter(r => r.status === 'active').length;
+  applyActiveRidesNow(activeCount);
+
   const badge = document.getElementById('rides-badge');
   if (badge) {
     badge.textContent = activeCount;
@@ -213,6 +371,9 @@ function refreshRides(snap) {
 
   if (typeof buildRidesTable === 'function') buildRidesTable();
   if (typeof buildPassengersTable === 'function') buildPassengersTable();
+  // Dashboard "Recent Rides" — without this the card only refreshed when you
+  // navigated back to the dashboard, so a new booking never appeared live.
+  if (typeof buildDashRides === 'function') buildDashRides();
 }
 
 /** Derives per-passenger totals from the loaded rides. */
@@ -228,6 +389,21 @@ function rollUpPassengerStats() {
     if (r.type === 'PolaSolo')  p.solo  += 1;
     if (r.type === 'PolaShare') p.share += 1;
   });
+}
+
+/* Display labels only. Keys are the exact statuses written by
+   lib/core/services/ride_service.dart — the stored value is never rewritten. */
+const RIDE_STATUS_LABELS = {
+  searching: 'Searching',
+  accepted:  'Accepted',
+  arrived:   'Arrived',
+  ongoing:   'Ongoing',
+  completed: 'Done',
+  cancelled: 'Cancelled',
+};
+
+function rideStatusLabel(status) {
+  return RIDE_STATUS_LABELS[status] || status || 'Unknown';
 }
 
 function formatTime(ts) {
