@@ -78,7 +78,17 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .ni-lbl{flex:1}
 .ni-badge{font-size:9px;font-weight:700;background:var(--red);color:#fff;border-radius:50px;padding:2px 7px;min-width:18px;text-align:center}
 .ni-badge.grn{background:var(--grn)}
-.sb-footer{padding:12px 8px;border-top:1px solid var(--b1);flex-shrink:0}
+.sb-footer{padding:12px 8px;border-top:1px solid var(--b1);flex-shrink:0;position:relative}
+/* Admin identity popover. Sits inside the sidebar's bounds on purpose —
+   .sidebar is overflow:hidden, so it opens upward over the nav list. */
+.admin-pop{position:absolute;bottom:calc(100% - 4px);left:8px;right:8px;background:var(--s1);border:1px solid var(--b1);border-radius:16px;box-shadow:var(--shadow);padding:6px;z-index:50;opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .18s,transform .18s}
+.admin-pop.show{opacity:1;pointer-events:all;transform:translateY(0)}
+.ap-id{padding:9px 11px 8px}
+.ap-name{font-size:12px;font-weight:700;color:var(--t1)}
+.ap-mail{font-size:10px;color:var(--t2);margin-top:2px;word-break:break-all}
+.ap-div{height:1px;background:var(--b1);margin:2px 4px 4px}
+.ap-act{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:var(--r);cursor:pointer;font-size:12px;font-weight:600;color:var(--rl);transition:background .17s}
+.ap-act:hover{background:var(--s2)}
 .sb-user{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:var(--r);cursor:pointer;transition:all .18s}
 .sb-user:hover{background:var(--s2)}
 .sb-ava{width:32px;height:32px;border-radius:50%;background:var(--rg);border:1.5px solid var(--rb);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
@@ -120,6 +130,7 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .sc-val{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:var(--t1);line-height:1}
 .sc-lbl{font-size:11px;font-weight:600;color:var(--t2);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
 .sc-sub{font-size:11px;color:var(--t3);margin-top:6px}
+.sc-sub.err{color:var(--rl)}   /* stat card failed to load — see dashboard_stats.js */
 .sc-bar{position:absolute;bottom:0;left:0;right:0;height:2px}
 .sc-bar.red{background:linear-gradient(90deg,var(--rl),transparent)}
 .sc-bar.grn{background:linear-gradient(90deg,var(--grn2),transparent)}
@@ -130,6 +141,7 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .row{display:grid;gap:14px;margin-bottom:14px}
 .row.c2{grid-template-columns:1fr 1fr}
 .row.c3{grid-template-columns:1fr 1fr 1fr}
+.row.c4{grid-template-columns:repeat(4,1fr)}
 .row.c13{grid-template-columns:1fr 2fr}
 .row.c31{grid-template-columns:2fr 1fr}
 
@@ -140,10 +152,18 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .card-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--t1);display:flex;align-items:center;gap:7px}
 .card-action{font-size:11px;font-weight:700;color:var(--rl);cursor:pointer;background:var(--rg);border:1px solid var(--rb);border-radius:50px;padding:4px 11px;transition:all .17s;white-space:nowrap}
 .card-action:hover{background:rgba(196,30,58,.2)}
+/* Pending-review flag on the Driver Registry card. Amber while applications
+   are waiting, green once the queue is clear. */
+.pending-flag{font-size:11px;font-weight:700;cursor:pointer;border-radius:50px;padding:4px 11px;transition:all .17s;white-space:nowrap}
+.pending-flag.warn{background:var(--amb2);border:1px solid var(--amb3);color:var(--amber)}
+.pending-flag.ok{background:var(--grn3);border:1px solid var(--grn4);color:var(--grn);cursor:default}
 .card-body{padding:16px}
 
 /* ══ MAP ══ */
-#adm-map{height:240px}
+#adm-map{height:240px;position:relative}
+/* Live map status line — sits over the map, never replaces it. */
+.map-status{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:800;background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);padding:7px 13px;font-size:11px;font-weight:600;color:var(--t2);white-space:nowrap;pointer-events:none;box-shadow:var(--shadow);display:none}
+.map-status.show{display:block}
 .leaflet-control-container .leaflet-top,.leaflet-control-container .leaflet-bottom{display:none}
 
 /* ══ TABLE ══ */
@@ -154,6 +174,8 @@ tbody td{padding:11px 14px;border-bottom:1px solid rgba(20,20,40,.045);color:var
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover td{background:var(--s2)}
 .td-bold{font-weight:600}
+.td-link{cursor:pointer;transition:color .16s}
+.td-link:hover{color:var(--rl)}
 .td-mono{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t2)}
 .td-sub{font-size:10px;color:var(--t3);margin-top:2px}
 
@@ -173,9 +195,6 @@ tbody tr:hover td{background:var(--s2)}
 .act-btn.approve:hover{background:var(--grn4)}
 .act-btn.reject{background:var(--rg);color:var(--rl);border:1px solid var(--rb)}
 .act-btn.reject:hover{background:rgba(196,30,58,.2)}
-.act-btn.view{background:var(--blu2);color:#60A5FA;border:1px solid var(--blu3)}
-.act-btn.view:hover{background:rgba(59,130,246,.2)}
-.act-btn.suspend{background:var(--amb2);color:#FBBF24;border:1px solid var(--amb3)}
 
 /* ══ FARE MANAGEMENT ══ */
 .solo-banner{background:var(--rg);border:1.5px solid var(--rb);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
@@ -186,17 +205,30 @@ tbody tr:hover td{background:var(--s2)}
 .fare-inp:focus{border-color:var(--rl)}
 .save-btn{padding:8px 16px;background:linear-gradient(135deg,var(--rl),var(--red));border:none;border-radius:var(--r);color:#fff;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;box-shadow:0 4px 12px rgba(196,30,58,.28)}
 .save-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(196,30,58,.38)}
-.fare-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.fare-item{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px 13px;display:flex;align-items:center;justify-content:space-between;transition:all .18s}
-.fare-item:hover{border-color:var(--b2)}
-.fi-route{font-size:12px;font-weight:600;color:var(--t1)}
-.fi-zone{font-size:10px;color:var(--t3);margin-top:2px}
 .fi-ctrl{display:flex;align-items:center;gap:5px}
 .fi-peso{font-size:12px;color:var(--t2);font-weight:600}
 .fi-inp{width:50px;background:var(--s1);border:1.5px solid var(--b2);border-radius:7px;padding:5px 7px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--rl);text-align:center;outline:none;transition:border-color .17s}
 .fi-inp:focus{border-color:var(--rl)}
-.fi-save{font-size:10px;font-weight:700;color:var(--grn2);cursor:pointer;background:var(--grn3);border:1px solid var(--grn4);border-radius:50px;padding:3px 8px;transition:all .17s;white-space:nowrap}
-.fi-save:hover{background:var(--grn4)}
+/* Advisory banner — used where a setting is stored but not yet consumed. */
+.info-note{background:var(--blu2);border:1.5px solid var(--blu3);border-radius:var(--r);padding:13px 15px;display:flex;gap:11px;align-items:flex-start;margin-bottom:14px}
+.info-note .in-ico{font-size:15px;line-height:1.2;flex-shrink:0}
+.info-note .in-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--t1)}
+.info-note .in-sub{font-size:12px;color:var(--t2);margin-top:3px;line-height:1.5}
+/* One labelled numeric setting inside a ride-type fare card. */
+.fare-field{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1)}
+.fare-field:last-child{border-bottom:none;padding-bottom:0}
+.fare-field:first-child{padding-top:0}
+.ff-lbl{font-size:12px;font-weight:600;color:var(--t1)}
+.ff-hint{font-size:10px;color:var(--t3);margin-top:2px}
+/* Route fare table */
+.route-note{font-size:11px;color:var(--t2);line-height:1.5;margin-bottom:10px}
+/* A row still on the default fare shows it greyed, so a screenful of inputs
+   reads at a glance as "mostly untouched". */
+.fi-inp.is-default{color:var(--t3)}
+.route-pill{font-size:9px;font-weight:700;border-radius:50px;padding:2px 7px;letter-spacing:.2px;white-space:nowrap}
+.route-pill.def{background:var(--s3);color:var(--t3);border:1px solid var(--b1)}
+.route-pill.custom{background:var(--blu2);color:var(--blu);border:1px solid var(--blu3);cursor:pointer}
+.route-pill.custom:hover{background:var(--blu3)}
 
 /* ══ REPORTS ══ */
 .mini-stat{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:13px;text-align:center}
@@ -221,6 +253,9 @@ tbody tr:hover td{background:var(--s2)}
 .modal-ov.show{opacity:1;pointer-events:all}
 .modal-box{background:var(--s1);border:1px solid var(--b2);border-radius:var(--rXL);padding:26px;width:440px;max-width:90vw;animation:modalIn .28s cubic-bezier(.34,1.2,.64,1);box-shadow:0 20px 60px rgba(0,0,0,.6)}
 @keyframes modalIn{from{opacity:0;transform:scale(.92) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+/* Opt-in size modifiers — only the driver-application modals use these. */
+.modal-box.wide{width:640px}
+.modal-box.tall{max-height:86vh;overflow-y:auto}
 .modal-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px}
 .modal-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:var(--t1)}
 .modal-sub{font-size:12px;color:var(--t2);margin-top:3px}
@@ -230,6 +265,11 @@ tbody tr:hover td{background:var(--s2)}
 .modal-lbl{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}
 .modal-val{font-size:13px;font-weight:600;color:var(--t1);background:var(--s2);border:1px solid var(--b1);border-radius:9px;padding:9px 12px;display:flex;align-items:center;gap:8px}
 .modal-val .mv-ico{font-size:15px}
+.doc-thumb-row{display:flex;gap:10px;flex-wrap:wrap}
+.doc-thumb-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;width:120px}
+.doc-thumb{width:120px;height:120px;object-fit:cover;display:block;background:var(--s2);border:1.5px solid var(--b2);border-radius:var(--r);cursor:pointer}
+.doc-thumb.placeholder{display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-size:10px;font-weight:600;color:var(--t3);cursor:default}
+.doc-thumb-label{font-size:10px;font-weight:600;color:var(--t2);text-align:center}
 .modal-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .modal-actions{display:flex;gap:9px;margin-top:18px}
 .modal-approve{flex:1;padding:12px;border:none;border-radius:var(--rL);background:linear-gradient(135deg,var(--grn2),var(--grn));color:#fff;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 4px 14px rgba(22,163,74,.25)}
@@ -278,7 +318,7 @@ tbody tr:hover td{background:var(--s2)}
 .view.on .stat-card:nth-child(4){animation-delay:.15s}
 
 /* ══ RESPONSIVE ══ */
-@media(max-width:1200px){.stat-grid{grid-template-columns:repeat(2,1fr)}.row.c3{grid-template-columns:1fr 1fr}.fare-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1200px){.stat-grid{grid-template-columns:repeat(2,1fr)}.row.c3{grid-template-columns:1fr 1fr}.row.c4{grid-template-columns:1fr 1fr}}
 @media(max-width:900px){.sidebar{width:56px;min-width:56px}.sb-logo-name,.sb-logo-sub,.ni-lbl,.ni-badge,.sb-unm,.sb-url,.sb-sec{display:none}.sb-logo{justify-content:center;padding:18px 8px}.sb-logo-icon{margin:0}.nav-item{justify-content:center;padding:9px}.sb-user{justify-content:center}}
 
 /* ══ LOGIN PAGE ══ */
@@ -530,10 +570,10 @@ tbody tr:hover td{background:var(--s2)}
   <div class="sb-nav">
     <div class="sb-sec">Overview</div>
     <div class="nav-item on" id="ni-dashboard" onclick="navTo('dashboard')"><div class="ni-icon">📊</div><div class="ni-lbl">Dashboard</div></div>
-    <div class="nav-item" id="ni-rides" onclick="navTo('rides')"><div class="ni-icon">🛺</div><div class="ni-lbl">Rides</div><div class="ni-badge" id="rides-badge">2</div></div>
+    <div class="nav-item" id="ni-rides" onclick="navTo('rides')"><div class="ni-icon">🛺</div><div class="ni-lbl">Rides</div><div class="ni-badge" id="rides-badge" style="display:none"></div></div>
 
     <div class="sb-sec">People</div>
-    <div class="nav-item" id="ni-drivers" onclick="navTo('drivers')"><div class="ni-icon">👨‍✈️</div><div class="ni-lbl">Drivers</div><div class="ni-badge" id="pending-badge">1</div></div>
+    <div class="nav-item" id="ni-drivers" onclick="navTo('drivers')"><div class="ni-icon">👨‍✈️</div><div class="ni-lbl">Drivers</div><div class="ni-badge" id="pending-badge" style="display:none"></div></div>
     <div class="nav-item" id="ni-passengers" onclick="navTo('passengers')"><div class="ni-icon">🧍</div><div class="ni-lbl">Passengers</div></div>
 
     <div class="sb-sec">Operations</div>
@@ -549,7 +589,19 @@ tbody tr:hover td{background:var(--s2)}
     </div>
   </div>
   <div class="sb-footer">
-    <div class="sb-user" onclick="showToast('Profile — coming soon','amb')">
+    <!-- Name and email are filled by loadAdminIdentity() from admins/{uid}
+         and the signed-in Auth user. -->
+    <div class="admin-pop" id="admin-pop">
+      <div class="ap-id">
+        <div class="ap-name" id="ap-name">—</div>
+        <div class="ap-mail" id="ap-mail">—</div>
+      </div>
+      <div class="ap-div"></div>
+      <div class="ap-act" onclick="closeAdminMenu();adminLogout()">
+        <span>🚪</span><span>Log Out</span>
+      </div>
+    </div>
+    <div class="sb-user" id="sb-user" onclick="toggleAdminMenu(event)">
       <div class="sb-ava">👤</div>
       <div>
         <div class="sb-unm" id="sb-user-name">TODA Admin</div>
@@ -576,7 +628,7 @@ tbody tr:hover td{background:var(--s2)}
     <div class="tb-right">
       <div class="live-indicator" id="tb-live"><div class="live-dot"></div>System Live</div>
       <div class="tb-btn" id="tb-export" style="display:none" onclick="exportReport()">📥 Export</div>
-      <div class="tb-btn primary" onclick="openApproveModal()">+ Approve Driver</div>
+      <div class="tb-btn primary" id="tb-approve" style="display:none" onclick="openApproveModal()">+ Approve Driver</div>
     </div>
   </div>
 
@@ -586,32 +638,36 @@ tbody tr:hover td{background:var(--s2)}
     <!-- ════ DASHBOARD ════ -->
     <div class="view on" id="view-dashboard">
       <div class="stat-grid">
+        <!-- Values are written by admin/dashboard_stats.js from live Firestore
+             data. The placeholders below are deliberately blank, not demo
+             numbers, so a Firebase failure never shows a plausible-looking
+             figure. -->
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon red">🛺</div><div class="sc-trend up">↑ 2 now</div></div>
-          <div class="sc-val" id="s-drivers">12</div>
+          <div class="sc-top"><div class="sc-icon red">🛺</div><div class="sc-trend up" id="s-drivers-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-drivers">…</div>
           <div class="sc-lbl">Active Drivers</div>
-          <div class="sc-sub">8 online · 4 offline</div>
+          <div class="sc-sub" id="s-drivers-sub">Loading…</div>
           <div class="sc-bar red"></div>
         </div>
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon grn">🧍</div><div class="sc-trend up">↑ 5 today</div></div>
-          <div class="sc-val" id="s-passengers">38</div>
+          <div class="sc-top"><div class="sc-icon grn">🧍</div><div class="sc-trend up" id="s-passengers-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-passengers">…</div>
           <div class="sc-lbl">Registered Passengers</div>
-          <div class="sc-sub">3 active rides now</div>
+          <div class="sc-sub" id="s-passengers-sub">Loading…</div>
           <div class="sc-bar grn"></div>
         </div>
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon amb">🏁</div><div class="sc-trend up">↑ 6 vs yest.</div></div>
-          <div class="sc-val" id="s-trips">24</div>
+          <div class="sc-top"><div class="sc-icon amb">🏁</div><div class="sc-trend up" id="s-trips-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-trips">…</div>
           <div class="sc-lbl">Trips Today</div>
-          <div class="sc-sub">18 completed · 2 active</div>
+          <div class="sc-sub" id="s-trips-sub">Loading…</div>
           <div class="sc-bar amb"></div>
         </div>
         <div class="stat-card">
-          <div class="sc-top"><div class="sc-icon blu">💰</div><div class="sc-trend up">↑ ₱120</div></div>
-          <div class="sc-val" id="s-revenue">₱480</div>
+          <div class="sc-top"><div class="sc-icon blu">💰</div><div class="sc-trend up" id="s-revenue-trend" style="display:none"></div></div>
+          <div class="sc-val" id="s-revenue">…</div>
           <div class="sc-lbl">Revenue Today</div>
-          <div class="sc-sub">Cash · No digital payment</div>
+          <div class="sc-sub" id="s-revenue-sub">Loading…</div>
           <div class="sc-bar blu"></div>
         </div>
       </div>
@@ -623,23 +679,30 @@ tbody tr:hover td{background:var(--s2)}
             <div class="card-title">📍 Live Ride Monitoring — Polangui, Albay <div class="live-indicator" style="font-size:10px;padding:3px 9px"><div class="live-dot"></div>LIVE</div></div>
             <div class="card-action" onclick="navTo('rides')">View All Rides</div>
           </div>
-          <div id="adm-map"></div>
+          <!-- #map-status reports what is NOT on the map (loading, no active
+               rides, missing driver location). The map itself always stays. -->
+          <div id="adm-map"><div class="map-status show" id="map-status">Loading active rides…</div></div>
         </div>
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:14px">
           <div class="card">
             <div class="card-hdr"><div class="card-title">🚖 Ride Type Split</div></div>
             <div class="card-body">
+              <!-- Arc lengths and percentages are set by renderRideTypeSplit()
+                   in dashboard_stats.js from today's /rides. Arcs start at
+                   zero length so no demo split is ever shown. -->
               <div class="donut-wrap">
                 <svg class="donut-svg" width="80" height="80" viewBox="0 0 80 80">
                   <circle cx="40" cy="40" r="28" fill="none" stroke="var(--s3)" stroke-width="12"/>
-                  <circle cx="40" cy="40" r="28" fill="none" stroke="var(--red)" stroke-width="12" stroke-dasharray="105 71" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
-                  <circle cx="40" cy="40" r="28" fill="none" stroke="var(--grn2)" stroke-width="12" stroke-dasharray="71 105" stroke-dashoffset="-105" transform="rotate(-90 40 40)"/>
-                  <text x="40" y="44" text-anchor="middle" font-size="12" font-family="Syne" font-weight="800" fill="var(--t1)">63%</text>
+                  <circle id="rt-arc-solo"  cx="40" cy="40" r="28" fill="none" stroke="var(--red)"  stroke-width="12" stroke-dasharray="0 175.93" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
+                  <circle id="rt-arc-share" cx="40" cy="40" r="28" fill="none" stroke="var(--grn2)" stroke-width="12" stroke-dasharray="0 175.93" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
+                  <circle id="rt-arc-rent"  cx="40" cy="40" r="28" fill="none" stroke="var(--pur)"  stroke-width="12" stroke-dasharray="0 175.93" stroke-dashoffset="0" transform="rotate(-90 40 40)"/>
+                  <text id="rt-center" x="40" y="44" text-anchor="middle" font-size="12" font-family="Syne" font-weight="800" fill="var(--t1)">—</text>
                 </svg>
                 <div class="donut-legend">
-                  <div class="dl-item"><div class="dl-dot" style="background:var(--red)"></div><div class="dl-lbl">PolaSolo</div><div class="dl-val">63%</div></div>
-                  <div class="dl-item"><div class="dl-dot" style="background:var(--grn2)"></div><div class="dl-lbl">PolaShare</div><div class="dl-val">37%</div></div>
+                  <div class="dl-item"><div class="dl-dot" style="background:var(--red)"></div><div class="dl-lbl">PolaSolo</div><div class="dl-val" id="rt-solo-val">—</div></div>
+                  <div class="dl-item"><div class="dl-dot" style="background:var(--grn2)"></div><div class="dl-lbl">PolaShare</div><div class="dl-val" id="rt-share-val">—</div></div>
+                  <div class="dl-item"><div class="dl-dot" style="background:var(--pur)"></div><div class="dl-lbl">PolaRent</div><div class="dl-val" id="rt-rent-val">—</div></div>
                 </div>
               </div>
             </div>
@@ -669,7 +732,8 @@ tbody tr:hover td{background:var(--s2)}
         <div class="card">
           <div class="card-hdr"><div class="card-title">🗺️ Top Routes Today</div></div>
           <div class="card-body">
-            <div class="bar-chart" id="top-routes-chart"></div>
+            <!-- Rows are built by renderTopRoutes() in dashboard_stats.js. -->
+            <div class="bar-chart" id="top-routes-chart"><div class="empty-state"><div class="es-icon">⏳</div><div class="es-title">Loading top routes…</div></div></div>
           </div>
         </div>
       </div>
@@ -699,7 +763,7 @@ tbody tr:hover td{background:var(--s2)}
 
     <!-- ════ DRIVERS ════ -->
     <div class="view" id="view-drivers">
-      <div class="search-bar"><div class="sb-ico">🔍</div><input class="sb-inp" placeholder="Search drivers by name, plate, route…" oninput="filterDrivers(this.value)"></div>
+      <div class="search-bar"><div class="sb-ico">🔍</div><input class="sb-inp" placeholder="Search drivers by name, plate…" oninput="filterDrivers(this.value)"></div>
       <div class="filter-row">
         <div class="fpill on" onclick="filterDriverStatus('all',this)">All Drivers</div>
         <div class="fpill" onclick="filterDriverStatus('online',this)">Online</div>
@@ -709,11 +773,13 @@ tbody tr:hover td{background:var(--s2)}
       <div class="card">
         <div class="card-hdr">
           <div class="card-title">👨‍✈️ Driver Registry</div>
-          <div class="card-action" onclick="openApproveModal()">⚠️ 1 Pending Review</div>
+          <!-- Text and colour are set by renderPendingIndicator() from the
+               live driver list — never a fixed number. -->
+          <div class="pending-flag warn" id="pending-flag" onclick="openApproveModal()">⚠️ 0 pending reviews</div>
         </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Driver</th><th>Plate No.</th><th>Route</th><th>Trips</th><th>Rating</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Driver</th><th>Plate No.</th><th>Trips</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="drivers-tb"></tbody>
           </table>
         </div>
@@ -736,91 +802,130 @@ tbody tr:hover td{background:var(--s2)}
 
     <!-- ════ FARE MANAGEMENT ════ -->
     <div class="view" id="view-fares">
+      <!-- The mobile app reads settings/fares once per launch via FareService,
+           so a saved change reaches passengers on their next app start. -->
+      <div class="info-note">
+        <div class="in-ico">ℹ️</div>
+        <div>
+          <div class="in-title">Changes apply the next time a passenger opens the app</div>
+          <div class="in-sub">The app reads these rates once when it starts. A passenger already in the app keeps the rates they launched with until they reopen it. Rides already booked keep the fare they were quoted.</div>
+        </div>
+      </div>
+
+      <div class="row c4">
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">💵 Default Base Fare</div></div>
+          <div class="card-body">
+            <div class="fare-field">
+              <div><div class="ff-lbl">Base fare</div><div class="ff-hint">Used for any route without a custom fare.</div></div>
+              <div class="fi-ctrl"><span class="fi-peso">₱</span><input class="fare-inp" id="fare-default-base" type="number" min="0" step="1" placeholder="20" oninput="renderRouteComputed()"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">🚖 PolaSolo</div></div>
+          <div class="card-body">
+            <div class="fare-field">
+              <div><div class="ff-lbl">Surcharge multiplier</div><div class="ff-hint">Exclusive-ride uplift, e.g. 1.3</div></div>
+              <div class="fi-ctrl"><span class="fi-peso">×</span><input class="fare-inp" id="fare-solo-surcharge" type="number" min="1" step="0.1" oninput="renderRouteComputed()"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">👥 PolaShare</div></div>
+          <div class="card-body">
+            <div class="fare-field">
+              <div><div class="ff-lbl">Maximum seats</div><div class="ff-hint">Seats bookable in one ride</div></div>
+              <div class="fi-ctrl"><span class="fi-peso">#</span><input class="fare-inp" id="fare-share-max" type="number" min="1" step="1"></div>
+            </div>
+            <div class="fare-field">
+              <div><div class="ff-lbl">Fare per seat</div><div class="ff-hint">The route's base fare — set it per route below.</div></div>
+              <div class="fi-ctrl"><span class="fi-peso" style="color:var(--t3)">route</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">🗓️ PolaRent</div></div>
+          <div class="card-body">
+            <div class="fare-field">
+              <div><div class="ff-lbl">Hourly rate</div><div class="ff-hint">Charged per hour of rental</div></div>
+              <div class="fi-ctrl"><span class="fi-peso">₱</span><input class="fare-inp" id="fare-rent-rate" type="number" min="0" step="1"></div>
+            </div>
+            <div class="fare-field">
+              <div><div class="ff-lbl">Minimum hours</div><div class="ff-hint">Shortest rental accepted</div></div>
+              <div class="fi-ctrl"><span class="fi-peso">h</span><input class="fare-inp" id="fare-rent-min" type="number" min="1" step="1"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="solo-banner">
         <div class="solo-info">
-          <div class="solo-title">🚖 PolaSolo Surcharge</div>
-          <div class="solo-sub">Fixed amount added on top of base fare for exclusive rides. Currently active across all routes.</div>
+          <div class="solo-title">💾 Ride Type Fares</div>
+          <div class="solo-sub" id="fare-status">Loading saved fares…</div>
         </div>
         <div class="surcharge-ctrl">
-          <span style="font-size:14px;color:var(--t2);font-weight:600">+₱</span>
-          <input class="fare-inp" id="solo-inp" value="5" type="number" min="0" max="50">
-          <button class="save-btn" onclick="saveSurcharge()">Save</button>
+          <button class="save-btn" id="fare-save-btn" onclick="saveRideTypeFares()">Save Fares</button>
         </div>
       </div>
       <div class="card">
         <div class="card-hdr">
-          <div class="card-title">💰 Route Fare Table</div>
-          <div style="display:flex;gap:8px">
-            <div class="card-action" onclick="saveAllFares()">💾 Save All</div>
-            <div class="card-action" onclick="showToast('Fares reset to defaults','amb')">↺ Reset</div>
+          <div class="card-title">🗺️ Route Fare Table</div>
+          <div class="card-action" id="routes-save-btn" onclick="saveRouteFares()">💾 Save Routes</div>
+        </div>
+        <div class="card-body" style="padding-bottom:10px">
+          <div class="route-note">The route sets the base fare. PolaSolo multiplies it by the surcharge; PolaShare charges it per seat. PolaRent is priced by the hour and ignores the route, so it isn't listed here.</div>
+          <div class="search-bar" style="margin-bottom:0">
+            <div class="sb-ico">🔍</div>
+            <input class="sb-inp" id="route-filter" placeholder="Filter by location…" oninput="buildRouteTable(this.value)">
           </div>
         </div>
-        <div class="card-body">
-          <div class="fare-grid" id="fare-grid"></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Route</th><th>Base fare</th><th>PolaSolo</th><th>PolaShare (per seat)</th></tr></thead>
+            <tbody id="routes-tb"></tbody>
+          </table>
         </div>
       </div>
     </div>
 
     <!-- ════ REPORTS ════ -->
     <div class="view" id="view-reports">
-      <div class="filter-row">
-        <div class="fpill on">This Week</div>
-        <div class="fpill" onclick="showToast('Monthly view coming soon','amb')">This Month</div>
-        <div class="fpill" onclick="showToast('Custom range coming soon','amb')">Custom Range</div>
+      <!-- Every figure below is derived from the RIDES / DRIVERS / PASSENGERS
+           arrays the Firebase layer keeps in sync. The rides listener is
+           capped at 50 documents, so this panel is explicitly scoped to that
+           window rather than claiming to be all-time. -->
+      <div class="info-note">
+        <div class="in-ico">📊</div>
+        <div>
+          <div class="in-title">Based on the 50 most recent rides</div>
+          <div class="in-sub">Ride figures are calculated from the 50 newest bookings the console keeps loaded. Driver and passenger counts are totals across all accounts.</div>
+        </div>
       </div>
 
       <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
-        <div class="stat-card"><div class="sc-top"><div class="sc-icon grn">🏁</div><div class="sc-trend up">↑ 18</div></div><div class="sc-val">142</div><div class="sc-lbl">Total Trips</div><div class="sc-bar grn"></div></div>
-        <div class="stat-card"><div class="sc-top"><div class="sc-icon amb">💰</div><div class="sc-trend up">↑ ₱480</div></div><div class="sc-val">₱2,840</div><div class="sc-lbl">Total Revenue</div><div class="sc-bar amb"></div></div>
-        <div class="stat-card"><div class="sc-top"><div class="sc-icon red">⭐</div><div class="sc-trend up">↑ 0.2</div></div><div class="sc-val">4.8</div><div class="sc-lbl">Avg Driver Rating</div><div class="sc-bar red"></div></div>
+        <div class="stat-card"><div class="sc-top"><div class="sc-icon grn">🏁</div></div><div class="sc-val" id="rp-rides">—</div><div class="sc-lbl">Completed Rides</div><div class="sc-sub" id="rp-rides-sub">—</div><div class="sc-bar grn"></div></div>
+        <div class="stat-card"><div class="sc-top"><div class="sc-icon amb">💰</div></div><div class="sc-val" id="rp-revenue">—</div><div class="sc-lbl">Total Revenue</div><div class="sc-sub">Cash collected on completed rides</div><div class="sc-bar amb"></div></div>
+        <div class="stat-card"><div class="sc-top"><div class="sc-icon blu">🧾</div></div><div class="sc-val" id="rp-avgfare">—</div><div class="sc-lbl">Average Fare</div><div class="sc-sub">Revenue ÷ completed rides</div><div class="sc-bar blu"></div></div>
+        <div class="stat-card"><div class="sc-top"><div class="sc-icon red">✖️</div></div><div class="sc-val" id="rp-cancel">—</div><div class="sc-lbl">Cancellation Rate</div><div class="sc-sub" id="rp-cancel-sub">—</div><div class="sc-bar red"></div></div>
+        <div class="stat-card"><div class="sc-top"><div class="sc-icon red">🛺</div></div><div class="sc-val" id="rp-drivers">—</div><div class="sc-lbl">Approved Drivers</div><div class="sc-sub" id="rp-drivers-sub">—</div><div class="sc-bar red"></div></div>
+        <div class="stat-card"><div class="sc-top"><div class="sc-icon grn">🧍</div></div><div class="sc-val" id="rp-passengers">—</div><div class="sc-lbl">Registered Passengers</div><div class="sc-sub">All passenger accounts</div><div class="sc-bar grn"></div></div>
       </div>
 
       <div class="row c2">
         <div class="card">
-          <div class="card-hdr"><div class="card-title">📊 Trips Per Day</div></div>
+          <div class="card-hdr"><div class="card-title">🏆 Top Drivers</div></div>
           <div class="card-body">
-            <div style="display:flex;align-items:flex-end;gap:8px;height:100px">
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--rl),transparent);border-radius:4px 4px 0 0;height:60%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Mon</div>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--rl),transparent);border-radius:4px 4px 0 0;height:75%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Tue</div>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--rl),transparent);border-radius:4px 4px 0 0;height:50%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Wed</div>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--rl),transparent);border-radius:4px 4px 0 0;height:90%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Thu</div>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--rl),transparent);border-radius:4px 4px 0 0;height:100%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Fri</div>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--grn2),transparent);border-radius:4px 4px 0 0;height:80%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Sat</div>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">
-                <div style="flex:1;width:100%;background:linear-gradient(to top,var(--grn2),transparent);border-radius:4px 4px 0 0;height:55%;min-height:4px"></div>
-                <div style="font-size:9px;color:var(--t3)">Sun</div>
-              </div>
-            </div>
+            <div class="bar-chart" id="rp-topdrivers"></div>
           </div>
         </div>
         <div class="card">
-          <div class="card-hdr"><div class="card-title">🗺️ Top Routes This Week</div></div>
+          <div class="card-hdr"><div class="card-title">🗺️ Top Routes</div></div>
           <div class="card-body">
-            <div class="bar-chart">
-              <div class="bar-row"><div class="bar-lbl">Centro → Market</div><div class="bar-track"><div class="bar-fill" style="width:85%"></div></div><div class="bar-val">42</div></div>
-              <div class="bar-row"><div class="bar-lbl">Centro → Terminal</div><div class="bar-track"><div class="bar-fill" style="width:72%"></div></div><div class="bar-val">38</div></div>
-              <div class="bar-row"><div class="bar-lbl">Centro → Hospital</div><div class="bar-track"><div class="bar-fill" style="width:48%"></div></div><div class="bar-val">24</div></div>
-              <div class="bar-row"><div class="bar-lbl">Centro → Bicol Univ.</div><div class="bar-track"><div class="bar-fill" style="width:40%"></div></div><div class="bar-val">21</div></div>
-              <div class="bar-row"><div class="bar-lbl">Centro → Liboro</div><div class="bar-track"><div class="bar-fill grn" style="width:32%"></div></div><div class="bar-val">17</div></div>
-            </div>
+            <div class="bar-chart" id="rp-toproutes"></div>
           </div>
         </div>
       </div>
@@ -830,10 +935,7 @@ tbody tr:hover td{background:var(--s2)}
         <div class="tbl-wrap">
           <table>
             <thead><tr><th>Ride Type</th><th>Trips</th><th>Share</th><th>Revenue</th><th>Avg Fare</th><th>Top Route</th></tr></thead>
-            <tbody>
-              <tr><td><span class="badge active">🚖 PolaSolo</span></td><td class="td-bold">89</td><td>63%</td><td class="td-bold" style="color:var(--grn2)">₱1,870</td><td class="td-mono">₱21</td><td>Centro → Terminal</td></tr>
-              <tr><td><span class="badge online">👥 PolaShare</span></td><td class="td-bold">53</td><td>37%</td><td class="td-bold" style="color:var(--grn2)">₱970</td><td class="td-mono">₱18</td><td>Centro → Market</td></tr>
-            </tbody>
+            <tbody id="rp-typebody"></tbody>
           </table>
         </div>
       </div>
@@ -845,7 +947,9 @@ tbody tr:hover td{background:var(--s2)}
 
 <!-- ══ APPROVE MODAL ══ -->
 <div class="modal-ov" id="approve-modal">
-  <div class="modal-box">
+  <!-- Every value below is filled by openDriverApplication() from the live
+       drivers/{uid} + users/{uid} documents. No demo applicants. -->
+  <div class="modal-box tall">
     <div class="modal-hdr">
       <div>
         <div class="modal-title">👨‍✈️ Driver Registration Review</div>
@@ -856,34 +960,75 @@ tbody tr:hover td{background:var(--s2)}
     <div class="modal-row">
       <div class="modal-field">
         <div class="modal-lbl">Full Name</div>
-        <div class="modal-val"><span class="mv-ico">👤</span>Roberto Santos</div>
+        <div class="modal-val"><span class="mv-ico">👤</span><span id="am-name">—</span></div>
       </div>
       <div class="modal-field">
         <div class="modal-lbl">Phone Number</div>
-        <div class="modal-val"><span class="mv-ico">📞</span>0917-123-4567</div>
+        <div class="modal-val"><span class="mv-ico">📞</span><span id="am-phone">—</span></div>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <div class="modal-lbl">Email Address</div>
+        <div class="modal-val"><span class="mv-ico">✉️</span><span id="am-email">—</span></div>
+      </div>
+      <div class="modal-field">
+        <div class="modal-lbl">Barangay</div>
+        <div class="modal-val"><span class="mv-ico">🏘️</span><span id="am-barangay">—</span></div>
       </div>
     </div>
     <div class="modal-row">
       <div class="modal-field">
         <div class="modal-lbl">Tricycle Plate No.</div>
-        <div class="modal-val"><span class="mv-ico">🛺</span>POLO-5678</div>
+        <div class="modal-val"><span class="mv-ico">🛺</span><span id="am-plate">—</span></div>
       </div>
       <div class="modal-field">
         <div class="modal-lbl">Driver's License No.</div>
-        <div class="modal-val"><span class="mv-ico">🪪</span>N07-23-123456</div>
+        <div class="modal-val"><span class="mv-ico">🪪</span><span id="am-license">—</span></div>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <div class="modal-lbl">License Expiry</div>
+        <div class="modal-val"><span class="mv-ico">📅</span><span id="am-expiry">—</span></div>
+      </div>
+      <div class="modal-field">
+        <div class="modal-lbl">Submitted</div>
+        <div class="modal-val"><span class="mv-ico">🕐</span><span id="am-submitted">—</span></div>
       </div>
     </div>
     <div class="modal-field">
-      <div class="modal-lbl">Preferred Route</div>
-      <div class="modal-val"><span class="mv-ico">🗺️</span>Centro – Bus Terminal</div>
+      <div class="modal-lbl">Submitted Documents</div>
+      <div id="am-docs"></div>
     </div>
     <div class="modal-field">
       <div class="modal-lbl">Registration Status</div>
-      <div class="modal-val"><span class="badge pending">Pending Approval</span></div>
+      <div class="modal-val"><span class="badge pending" id="am-status">pending</span></div>
     </div>
     <div class="modal-actions">
       <button class="modal-approve" onclick="approveDriver()">✓ Approve Driver</button>
       <button class="modal-reject" onclick="rejectDriver()">✗ Reject</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PENDING DRIVER APPLICATIONS ══
+     Opened by the "Approve Driver" quick action. Rows come from the live
+     /drivers snapshot filtered to status === 'pending'. -->
+<div class="modal-ov" id="pending-modal">
+  <div class="modal-box wide tall">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title">👨‍✈️ Pending Driver Applications</div>
+        <div class="modal-sub">Newest first · updates live as drivers apply</div>
+      </div>
+      <div class="modal-x" onclick="closePendingModal()">✕</div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Driver</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+        <tbody id="pending-tb"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -966,6 +1111,11 @@ function capitalise(str){return str.charAt(0).toUpperCase()+str.slice(1);}
 
 function adminLogout(){
   if(window.adminSignOut)window.adminSignOut();
+  // Drop cached per-admin state so the next sign-in never shows the previous
+  // admin's identity or their saved fares.
+  adminIdentityLoaded=false;
+  fareSettingsLoaded=false;
+  closeAdminMenu();
   const al=document.getElementById('admin-layout');
   const ls=document.getElementById('login-screen');
   ls.style.display='flex';
@@ -983,74 +1133,76 @@ function adminLogout(){
    DATA
 ══════════════════════════════════════ */
 const CENTER=[13.2931,123.4879];
+
+/* The ten Polangui landmarks offered as pickup/destination points — must
+   stay in sync with kPolanguiLocations in
+   lib/core/constants/polangui_locations.dart; the admin console can't import
+   Dart, so this is a hand-kept second copy. If this list changes, that copy
+   must change with it or per-route fares below will silently fall back to
+   default. ROUTE_PAIRS (below) is generated from this list rather than
+   hand-typed a second time, so it can't drift from it independently. */
 const PL=[
-  {id:'centro',   name:'Polangui Centro',              lat:13.2931,lng:123.4879},
-  {id:'market',   name:'Polangui Public Market',        lat:13.2935,lng:123.4910},
-  {id:'hall',     name:'Municipal Hall',                lat:13.2950,lng:123.4880},
-  {id:'terminal', name:'Integrated Terminal',           lat:13.2920,lng:123.4842},
-  {id:'bucs',     name:'Bicol Univ. Polangui',         lat:13.3010,lng:123.4862},
-  {id:'hospital', name:'Dr. Esteban Ante Hospital',    lat:13.2870,lng:123.4920},
-  {id:'lcc',      name:'LCC Mall Polangui',            lat:13.2905,lng:123.4915},
-  {id:'jollibee', name:'Jollibee Polangui',            lat:13.2895,lng:123.4900},
-  {id:'liboro',   name:'Liboro, Polangui',             lat:13.3058,lng:123.4924},
-  {id:'baligang', name:'Baligang, Polangui',           lat:13.2800,lng:123.4840},
+  {id:'terminal',    name:'Polangui Integrated Transport Terminal',     lat:13.2899,  lng:123.4835},
+  {id:'jollibee',    name:'Jollibee Polangui Drive Thru',               lat:13.2954,  lng:123.4770},
+  {id:'lcc',         name:'LCC Mall Polangui',                          lat:13.3032,  lng:123.4855},
+  {id:'bucs',        name:'Bicol University Polangui Campus',           lat:13.30361, lng:123.47556},
+  {id:'xentro',      name:'Xentro Mall Polangui',                       lat:13.2950,  lng:123.4790},
+  {id:'school',      name:'Polangui General Comprehensive High School', lat:13.2922,  lng:123.4856},
+  {id:'nightmarket', name:'Polangui Night Market',                      lat:13.28583, lng:123.49639},
+  {id:'hall',        name:'Polangui Municipal Hall',                    lat:13.29284, lng:123.48414},
+  {id:'biggs',       name:'Biggs Polangui',                             lat:13.2958,  lng:123.4792},
+  {id:'rhu',         name:'RHU Polangui Birthing Facility',             lat:13.3150,  lng:123.4830},
 ];
 
-let routeFares={
-  'centro-market':10,'centro-hall':10,'centro-terminal':15,
-  'centro-bucs':20,'centro-hospital':25,'centro-lcc':15,
-  'centro-jollibee':15,'centro-liboro':20,'centro-baligang':20,
-  'market-terminal':15,'market-lcc':10,'market-hospital':20,
-  'terminal-bucs':20,'terminal-hospital':20,'lcc-hospital':15,
-  'lcc-jollibee':10,'bucs-terminal':20,'hall-market':10,
-};
-let soloSurcharge=5;
+/* Mirrors FareService.routeKey() in lib/core/services/fare_service.dart
+   exactly (alphabetical pair, joined with "|") — this is the actual key
+   settings/fares.routes is keyed by, and the only thing that matters for a
+   saved fare to actually reach the app. PL's short `id`s are a separate,
+   DOM-safe identifier (element ids can't contain the spaces a full location
+   name has) — never used as the Firestore key. */
+function routeKey(a,b){return a<=b ? `${a}|${b}` : `${b}|${a}`;}
 
-let DRIVERS=[
-  {name:'Carlos Reyes',   plate:'POLO-1234',route:'Centro – Market',  trips:214,rating:4.9,status:'online'},
-  {name:'Jose Mendoza',   plate:'POLO-2345',route:'Centro – Terminal', trips:87, rating:4.7,status:'online'},
-  {name:'Ronaldo Cruz',   plate:'POLO-3456',route:'All Routes',        trips:156,rating:4.8,status:'offline'},
-  {name:'Ernesto Bato',   plate:'POLO-4567',route:'Centro – Hospital', trips:42, rating:4.5,status:'offline'},
-  {name:'Danilo Reyes',   plate:'POLO-5599',route:'Centro – Bicol Univ.',trips:93,rating:4.6,status:'online'},
-  {name:'Roberto Santos', plate:'POLO-5678',route:'Centro – Terminal', trips:0,  rating:0,  status:'pending'},
-];
+/* Every possible route pair across the ten PL landmarks (10 choose 2 = 45),
+   generated rather than hand-typed so it can never list a route PL doesn't
+   have, or drift from PL's names independently of it. zone groups rows under
+   their origin landmark. */
+const ROUTE_PAIRS=PL.flatMap((a,i)=>PL.slice(i+1).map(b=>({
+  domId:`${a.id}-${b.id}`,
+  fareKey:routeKey(a.name,b.name),
+  aName:a.name, bName:b.name,
+  label:`${a.name} → ${b.name}`,
+  zone:a.name,
+})));
 
-let PASSENGERS=[
-  {name:'Maria Santos',   phone:'0917-123-4567',rides:18,solo:11,share:7, spent:360},
-  {name:'Juan Dela Cruz', phone:'0918-234-5678',rides:7, solo:5, share:2, spent:140},
-  {name:'Ana Reyes',      phone:'0919-345-6789',rides:24,solo:14,share:10,spent:480},
-  {name:'Paolo Bautista', phone:'0920-456-7890',rides:3, solo:3, share:0, spent:65},
-  {name:'Liza Garcia',    phone:'0921-567-8901',rides:11,solo:6, share:5, spent:220},
-  {name:'Marco Villanueva',phone:'0922-678-9012',rides:6,solo:4, share:2, spent:115},
-];
+/* Customised route fares only — keyed by domId for quick lookup against the
+   currently-rendered inputs. Hydrated from settings/fares.routes by
+   loadRideTypeFares() below; a route with no entry here shows (and, until
+   customised, effectively charges) the Default Base Fare. Nothing is
+   pre-populated — an absent route already falls back to the default, both
+   here and in FareService.baseFareFor on the app side. */
+let ROUTE_FARE_STATE={};
 
-let RIDES=[
-  {id:'PM-001',pass:'Maria Santos',  drv:'Carlos Reyes', from:'Centro',to:'Public Market',  type:'PolaSolo',  seats:1,fare:15,  status:'done',     time:'2:14 PM'},
-  {id:'PM-002',pass:'Juan Dela Cruz',drv:'Jose Mendoza', from:'Centro',to:'Bus Terminal',   type:'PolaShare', seats:3,fare:45,  status:'active',   time:'2:31 PM'},
-  {id:'PM-003',pass:'Ana Reyes',     drv:'Carlos Reyes', from:'LCC Mall',to:'Hospital',     type:'PolaSolo',  seats:1,fare:20,  status:'active',   time:'2:38 PM'},
-  {id:'PM-004',pass:'Paolo Bautista',drv:'Ronaldo Cruz', from:'Centro',to:'Bicol Univ.',    type:'PolaShare', seats:4,fare:80,  status:'done',     time:'1:55 PM'},
-  {id:'PM-005',pass:'Liza Garcia',   drv:'Jose Mendoza', from:'Market', to:'Centro',        type:'PolaSolo',  seats:1,fare:15,  status:'cancelled',time:'1:30 PM'},
-  {id:'PM-006',pass:'Marco Villanueva',drv:'Danilo Reyes',from:'Centro',to:'Liboro',        type:'PolaSolo',  seats:1,fare:25,  status:'done',     time:'12:45 PM'},
-  {id:'PM-007',pass:'Ana Reyes',     drv:'Ernesto Bato', from:'Centro',to:'Hospital',       type:'PolaShare', seats:2,fare:50,  status:'done',     time:'11:20 AM'},
-];
+/* Live from /drivers. polamove_admin_firebase.js fills this from the Firestore
+   listener. Empty on purpose — the registry shows its empty state until real
+   data lands rather than demo drivers. */
+let DRIVERS=[];
 
-const ROUTES_FARE=[
-  {key:'centro-market',   label:'Centro → Public Market',   zone:'Centro'},
-  {key:'centro-terminal', label:'Centro → Bus Terminal',    zone:'Centro'},
-  {key:'centro-bucs',     label:'Centro → Bicol University',zone:'Centro'},
-  {key:'centro-hospital', label:'Centro → Hospital',        zone:'Centro'},
-  {key:'centro-lcc',      label:'Centro → LCC Mall',        zone:'Centro'},
-  {key:'centro-jollibee', label:'Centro → Jollibee',        zone:'Centro'},
-  {key:'centro-liboro',   label:'Centro → Liboro',          zone:'Centro'},
-  {key:'centro-baligang', label:'Centro → Baligang',        zone:'Centro'},
-  {key:'market-terminal', label:'Market → Bus Terminal',    zone:'Market'},
-  {key:'market-hospital', label:'Market → Hospital',        zone:'Market'},
-  {key:'market-lcc',      label:'Market → LCC Mall',        zone:'Market'},
-  {key:'terminal-bucs',   label:'Terminal → Bicol Univ.',   zone:'Terminal'},
-  {key:'terminal-hospital',label:'Terminal → Hospital',     zone:'Terminal'},
-  {key:'lcc-hospital',    label:'LCC Mall → Hospital',      zone:'LCC'},
-  {key:'lcc-jollibee',    label:'LCC Mall → Jollibee',      zone:'LCC'},
-];
+/* Pending driver applications. Filled by polamove_admin_firebase.js from the
+   live /drivers snapshot — starts empty on purpose, there are no demo
+   applicants. PENDING_STATE: 'loading' | 'ready' | 'error'. */
+let PENDING=[];
+let PENDING_STATE='loading';
+
+/* Live from /users where role === 'passenger'. Filled by
+   polamove_admin_firebase.js — empty on purpose, same as DRIVERS. */
+let PASSENGERS=[];
+
+/* Live from /rides. polamove_admin_firebase.js fills this from the Firestore
+   listener (requestedAt desc). Empty on purpose — no demo rides are ever
+   shown, including when Firebase is unreachable.
+   RIDES_STATE: 'loading' | 'ready' | 'error'. */
+let RIDES=[];
+let RIDES_STATE='loading';
 
 /* ══ MAP ══ */
 let admMap=null;
@@ -1058,24 +1210,10 @@ function initAdmMap(){
   if(admMap)return;
   admMap=L.map('adm-map',{zoomControl:true,attributionControl:false}).setView(CENTER,15);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(admMap);
-  // Place drivers
-  const trikes=[
-    {lat:13.2931,lng:123.4879,plate:'POLO-1234',status:'online',name:'Carlos Reyes'},
-    {lat:13.2944,lng:123.4864,plate:'POLO-2345',status:'online',name:'Jose Mendoza'},
-    {lat:13.2970,lng:123.4885,plate:'POLO-5599',status:'online',name:'Danilo Reyes'},
-    {lat:13.2905,lng:123.4915,plate:'POLO-3456',status:'offline',name:'Ronaldo Cruz'},
-    {lat:13.2885,lng:123.4842,plate:'POLO-4567',status:'offline',name:'Ernesto Bato'},
-    // Active rides
-    {lat:13.2910,lng:123.4880,plate:'POLO-2345',status:'active',name:'Active: Centro→Terminal'},
-    {lat:13.2880,lng:123.4910,plate:'POLO-1234',status:'active',name:'Active: LCC→Hospital'},
-  ];
-  trikes.forEach(t=>{
-    const opacity=t.status==='offline'?0.4:1;
-    const emoji=t.status==='active'?'🔴':t.status==='online'?'🛺':'⚫';
-    const ico=L.divIcon({html:`<div style="font-size:${t.status==='active'?18:16}px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5));opacity:${opacity}">${emoji}</div>`,iconAnchor:[9,18],className:''});
-    L.marker([t.lat,t.lng],{icon:ico}).addTo(admMap).bindPopup(`<b>${t.plate}</b><br>${t.name}<br><b>${t.status.toUpperCase()}</b>`);
-  });
-  // Animate active ride markers slightly
+  /* Markers are owned by live_map.js, which plots the driver of every
+     in-progress ride from drivers/{uid}.location. Painting once here covers
+     the case where the Firestore snapshots arrived before Leaflet was up. */
+  if(window.renderLiveMap)window.renderLiveMap();
   setTimeout(()=>admMap.invalidateSize(),200);
 }
 
@@ -1104,12 +1242,16 @@ function navTo(v){
 
 /* ══ TOPBAR CONTEXT ══
    "System Live" belongs on the Dashboard only — it describes the live
-   monitoring view. "Export" belongs on Reports only. */
+   monitoring view. "Export" belongs on Reports only. "Approve Driver"
+   belongs on Drivers only, where the pending queue and the review modal
+   already live — a global shortcut just duplicates them. */
 function applyTopbarContext(v){
   const live=document.getElementById('tb-live');
   const exp=document.getElementById('tb-export');
+  const app=document.getElementById('tb-approve');
   if(live)live.style.display = v==='dashboard' ? '' : 'none';
   if(exp) exp.style.display  = v==='reports'   ? '' : 'none';
+  if(app) app.style.display  = v==='drivers'   ? '' : 'none';
 }
 
 function exportReport(){
@@ -1148,36 +1290,46 @@ initTheme();
 /* ══ BUILD TABLES ══ */
 function buildTables(v){
   if(v==='dashboard'||v==='rides')buildRidesTable();
-  if(v==='drivers')buildDriversTable(DRIVERS);
+  if(v==='drivers'){buildDriversTable(DRIVERS);renderPendingIndicator();}
   if(v==='passengers')buildPassengersTable();
-  if(v==='fares')buildFareGrid();
+  if(v==='fares'){buildRouteTable();loadRideTypeFares();}
+  if(v==='reports')buildReports();
   if(v==='dashboard'){buildDashRides();buildTopRoutes();}
 }
 
+/* Recent Rides — the five newest bookings by requestedAt, straight from the
+   /rides listener. r.statusLabel is display text only; the untouched Firestore
+   value stays on r.rawStatus, and r.status is just the badge colour bucket. */
 function buildDashRides(){
-  document.getElementById('dash-rides-tb').innerHTML=sortRides(RIDES).slice(0,5).map(r=>`
+  const tb=document.getElementById('dash-rides-tb');
+  if(!tb)return;
+
+  if(RIDES_STATE==='loading')
+    return void(tb.innerHTML=rideStateRow('⏳','Loading recent rides…'));
+  if(RIDES_STATE==='error')
+    return void(tb.innerHTML=rideStateRow('⚠️','Unable to load recent rides','Check your connection and try again.'));
+  if(!RIDES.length)
+    return void(tb.innerHTML=rideStateRow('🛺','No rides yet','Bookings appear here as they come in.'));
+
+  const recent=[...RIDES].sort((a,b)=>b.requestedAtMs-a.requestedAtMs).slice(0,5);
+  tb.innerHTML=recent.map(r=>`
     <tr>
       <td><div class="td-bold">${r.pass}</div></td>
       <td><div style="font-size:12px">${r.from} → ${r.to}</div></td>
       <td><span class="badge ${r.type==='PolaSolo'?'active':'online'}">${r.type==='PolaSolo'?'🚖':'👥'} ${r.type}</span></td>
       <td class="td-mono" style="color:var(--grn2)">₱${r.fare}</td>
-      <td><span class="badge ${r.status}">${r.status}</span></td>
+      <td><span class="badge ${r.status}">${r.statusLabel}</span></td>
     </tr>`).join('');
 }
+
+function rideStateRow(icon,title,sub=''){
+  return `<tr><td colspan="5"><div class="empty-state"><div class="es-icon">${icon}</div><div class="es-title">${title}</div>${sub?`<div class="es-sub">${sub}</div>`:''}</div></td></tr>`;
+}
+/* Ride Type Split + Top Routes Today are computed in dashboard_stats.js from
+   the same today's-rides listener the stat cards use, so there is nothing to
+   render here — this just re-paints them when the dashboard is shown. */
 function buildTopRoutes(){
-  const routes=[
-    {label:'Centro → Market',val:42,max:42},
-    {label:'Centro → Terminal',val:38,max:42},
-    {label:'Centro → Hospital',val:24,max:42},
-    {label:'Centro → Bicol Univ.',val:21,max:42},
-    {label:'Centro → Liboro',val:17,max:42,grn:true},
-  ];
-  document.getElementById('top-routes-chart').innerHTML=routes.map(r=>`
-    <div class="bar-row">
-      <div class="bar-lbl">${r.label}</div>
-      <div class="bar-track"><div class="bar-fill${r.grn?' grn':''}" style="width:${Math.round(r.val/r.max*100)}%"></div></div>
-      <div class="bar-val">${r.val}</div>
-    </div>`).join('');
+  if(window.renderDashboardCharts)window.renderDashboardCharts();
 }
 
 /* Sort priority: in-progress rides first (most likely to complete next),
@@ -1207,25 +1359,63 @@ function buildRidesTable(filter='all'){
     </tr>`).join(''):'<tr><td colspan="9"><div class="empty-state"><div class="es-icon">🛺</div><div class="es-title">No rides found</div></div></td></tr>';
 }
 
+/* A pending driver's name opens the same registration-review modal as the
+   "+ Approve Driver" queue (see openDriverApplication, further down) — the
+   detail view with document thumbnails is reachable from either table.
+   Approve / Reject stay as inline shortcuts on top of that. Approved drivers
+   have no per-row action or detail view, so that cell stays empty rather
+   than offering a control that does nothing. */
 function buildDriversTable(data){
-  document.getElementById('drivers-tb').innerHTML=data.map(d=>`
+  document.getElementById('drivers-tb').innerHTML=data.length?data.map(d=>`
     <tr>
-      <td><div class="td-bold">${d.name}</div></td>
+      <td>${d.status==='pending'
+        ? `<div class="td-bold td-link" onclick="openDriverApplication('${d.uid}')">${d.name}</div>`
+        : `<div class="td-bold">${d.name}</div>`}</td>
       <td class="td-mono">${d.plate}</td>
-      <td style="font-size:12px;color:var(--t2)">${d.route}</td>
       <td class="td-bold">${d.trips}</td>
-      <td>${d.rating>0?'⭐ '+d.rating:'—'}</td>
       <td><span class="badge ${d.status}">${d.status}</span></td>
       <td style="display:flex;gap:5px;padding:8px 14px">
-        ${d.status==='pending'?`<button class="act-btn approve" onclick="approveDriverInline('${d.name}')">✓ Approve</button><button class="act-btn reject" onclick="rejectDriverInline('${d.name}')">✗ Reject</button>`
-        :d.status==='online'?`<button class="act-btn view" onclick="showToast('Tracking ${d.name}…','grn')">📍 Track</button>`
-        :`<button class="act-btn suspend" onclick="showToast('${d.name} status updated','amb')">⚠️ Update</button>`}
+        ${d.status==='pending'
+          ? `<button class="act-btn approve" onclick="approveDriverInline('${d.name}')">✓ Approve</button><button class="act-btn reject" onclick="rejectDriverInline('${d.name}')">✗ Reject</button>`
+          : '<span style="color:var(--t3)">—</span>'}
       </td>
-    </tr>`).join('');
+    </tr>`).join(''):'<tr><td colspan="5"><div class="empty-state"><div class="es-icon">👨‍✈️</div><div class="es-title">No drivers yet</div><div class="es-sub">Registered drivers appear here as they sign up.</div></div></td></tr>';
+}
+
+/* Pending-review flag and sidebar badge, both derived from the live driver
+   list so they can never disagree with the queue. Called on every /drivers
+   snapshot by polamove_admin_firebase.js. */
+function renderPendingIndicator(){
+  const count=DRIVERS.filter(d=>d.status==='pending').length;
+
+  const flag=document.getElementById('pending-flag');
+  if(flag){
+    flag.className='pending-flag '+(count?'warn':'ok');
+    flag.textContent=count
+      ? `⚠️ ${count} pending review${count===1?'':'s'}`
+      : '✅ No pending reviews';
+  }
+
+  const badge=document.getElementById('pending-badge');
+  if(badge){
+    badge.textContent=count;
+    badge.style.display=count?'':'none';
+  }
+}
+
+/* Active-ride badge, derived from RIDES so it can never disagree with the
+   ride log. Called on every /rides snapshot by polamove_admin_firebase.js. */
+function renderRidesIndicator(){
+  const count=RIDES.filter(r=>r.status==='active').length;
+  const badge=document.getElementById('rides-badge');
+  if(badge){
+    badge.textContent=count;
+    badge.style.display=count?'':'none';
+  }
 }
 
 function buildPassengersTable(){
-  document.getElementById('passengers-tb').innerHTML=PASSENGERS.map(p=>`
+  document.getElementById('passengers-tb').innerHTML=PASSENGERS.length?PASSENGERS.map(p=>`
     <tr>
       <td><div class="td-bold">${p.name}</div></td>
       <td class="td-mono">${p.phone}</td>
@@ -1234,19 +1424,280 @@ function buildPassengersTable(){
       <td style="text-align:center;color:var(--t2)">${p.share}</td>
       <td class="td-mono" style="color:var(--grn2);font-weight:700">₱${p.spent}</td>
       <td><span class="badge online">active</span></td>
-    </tr>`).join('');
+    </tr>`).join(''):'<tr><td colspan="7"><div class="empty-state"><div class="es-icon">🧍</div><div class="es-title">No passengers yet</div><div class="es-sub">Passenger accounts appear here as they sign up.</div></div></td></tr>';
 }
 
-function buildFareGrid(){
-  document.getElementById('fare-grid').innerHTML=ROUTES_FARE.map(r=>`
-    <div class="fare-item">
-      <div><div class="fi-route">${r.label}</div><div class="fi-zone">${r.zone} Zone</div></div>
-      <div class="fi-ctrl">
-        <span class="fi-peso">₱</span>
-        <input class="fi-inp" id="fi-${r.key}" value="${routeFares[r.key]||10}" type="number" min="5" max="200">
-        <span class="fi-save" onclick="saveFare('${r.key}')">Save</span>
-      </div>
+/* ══ ROUTE FARE TABLE ══
+   #fare-default-base and #fare-solo-surcharge (Ride Type Fares, above) drive
+   every row's computed columns via renderRouteComputed(); typing in a row's
+   own fare input goes through onRouteFareInput() instead, which never
+   touches that input's own value — only sibling cells — so a full rebuild
+   mid-keystroke can't steal the input's focus. */
+
+function currentDefaultBaseFare(){
+  const v=parseFloat((document.getElementById('fare-default-base')||{}).value);
+  return isNaN(v)?FARE_DEFAULTS.solo.baseFare:v;
+}
+function currentSoloSurcharge(){
+  const v=parseFloat((document.getElementById('fare-solo-surcharge')||{}).value);
+  return isNaN(v)?FARE_DEFAULTS.solo.surcharge:v;
+}
+function isRouteCustom(domId){
+  return Object.prototype.hasOwnProperty.call(ROUTE_FARE_STATE,domId);
+}
+
+function routeRowHtml(r){
+  const custom=isRouteCustom(r.domId);
+  const value=custom?ROUTE_FARE_STATE[r.domId]:currentDefaultBaseFare();
+  const solo=Math.round(value*currentSoloSurcharge());
+  return `
+    <tr>
+      <td><div class="td-bold">${r.label}</div><div class="td-sub">${r.zone}</div></td>
+      <td>
+        <div class="fi-ctrl">
+          <span class="fi-peso">₱</span>
+          <input class="fi-inp${custom?'':' is-default'}" id="rf-inp-${r.domId}" type="number" min="5" max="200"
+              value="${value}" oninput="onRouteFareInput('${r.domId}',this.value)">
+          <span class="route-pill ${custom?'custom':'def'}" id="rf-pill-${r.domId}"
+              ${custom?`onclick="clearRouteFare('${r.domId}')" title="Reset to default"`:''}>${custom?'custom ✕':'default'}</span>
+        </div>
+      </td>
+      <td class="td-mono" id="rf-solo-${r.domId}">₱${solo}</td>
+      <td class="td-mono" id="rf-share-${r.domId}">₱${value}</td>
+    </tr>`;
+}
+
+/* Full rebuild — safe to call from the filter box and from the two Ride Type
+   Fares inputs above, none of which live inside #routes-tb themselves, so
+   rebuilding it can't blur whatever the admin is currently typing into. */
+function buildRouteTable(filterText){
+  const tb=document.getElementById('routes-tb');
+  if(!tb)return;
+  if(filterText===undefined)filterText=document.getElementById('route-filter')?.value||'';
+  const q=filterText.trim().toLowerCase();
+  const rows=ROUTE_PAIRS.filter(r=>!q||r.aName.toLowerCase().includes(q)||r.bName.toLowerCase().includes(q));
+
+  tb.innerHTML=rows.length
+    ? rows.map(routeRowHtml).join('')
+    : `<tr><td colspan="4"><div class="empty-state"><div class="es-icon">🔍</div><div class="es-title">No routes match “${rpEscape(filterText)}”</div></div></td></tr>`;
+}
+
+/* Updates one already-rendered row's pill / computed cells in place. Set
+   touchInput when the change originates outside that row's own input (the
+   shared default/surcharge fields changing, or a reset-to-default) — never
+   when called from that input's own oninput, or a rebuild mid-keystroke
+   would fight whatever the admin is typing. No-ops if the row isn't
+   currently rendered (filtered out). */
+function updateRouteRowChrome(domId,touchInput){
+  const inp=document.getElementById('rf-inp-'+domId);
+  if(!inp)return;
+  const custom=isRouteCustom(domId);
+  const value=custom?ROUTE_FARE_STATE[domId]:currentDefaultBaseFare();
+
+  if(touchInput)inp.value=value;
+  inp.classList.toggle('is-default',!custom);
+
+  const pill=document.getElementById('rf-pill-'+domId);
+  if(pill){
+    pill.className='route-pill '+(custom?'custom':'def');
+    pill.textContent=custom?'custom ✕':'default';
+    pill.title=custom?'Reset to default':'';
+    pill.onclick=custom?(()=>clearRouteFare(domId)):null;
+  }
+
+  const soloEl=document.getElementById('rf-solo-'+domId);
+  if(soloEl)soloEl.textContent='₱'+Math.round(value*currentSoloSurcharge());
+  const shareEl=document.getElementById('rf-share-'+domId);
+  if(shareEl)shareEl.textContent='₱'+value;
+}
+
+/* The admin typing a custom fare for one route. Deliberately does not touch
+   that row's own input value — see updateRouteRowChrome. */
+function onRouteFareInput(domId,raw){
+  const v=parseFloat(raw);
+  if(isNaN(v))delete ROUTE_FARE_STATE[domId];
+  else ROUTE_FARE_STATE[domId]=v;
+  updateRouteRowChrome(domId,false);
+}
+
+function clearRouteFare(domId){
+  delete ROUTE_FARE_STATE[domId];
+  updateRouteRowChrome(domId,true);
+}
+
+/* Called when the Default Base Fare or PolaSolo surcharge inputs change —
+   every row's computed columns depend on one or both. Non-custom rows also
+   get their displayed fare refreshed to the new default; custom rows keep
+   the admin's own value but still recompute PolaSolo against the new
+   surcharge. */
+function renderRouteComputed(){
+  ROUTE_PAIRS.forEach(r=>updateRouteRowChrome(r.domId,!isRouteCustom(r.domId)));
+}
+
+/* Writes only the routes the admin has actually customised — an untouched
+   row is never sent, since an absent key already falls back to the default
+   on both ends (FareService.baseFareFor in the app, currentDefaultBaseFare
+   here). Keyed by the full "A|B" name pair (see routeKey), not PL's short
+   ids — that's what the app actually looks up. */
+async function saveRouteFares(){
+  const domIds=Object.keys(ROUTE_FARE_STATE);
+  if(!domIds.length){showToast('No custom route fares to save — nothing to do.','amb');return;}
+  if(!window.saveRouteFareOverrides){showToast('Not connected to Firebase.','red');return;}
+
+  const payload={};
+  domIds.forEach(domId=>{
+    const pair=ROUTE_PAIRS.find(r=>r.domId===domId);
+    if(pair)payload[pair.fareKey]=ROUTE_FARE_STATE[domId];
+  });
+
+  try{
+    await window.saveRouteFareOverrides(payload);
+    showToast(`✅ Saved ${domIds.length} custom route fare${domIds.length===1?'':'s'}`,'grn');
+  }catch(e){
+    showToast('Could not save route fares: '+e.message,'red');
+  }
+}
+
+/* ══ REPORTS ══
+   Everything here is derived from the same RIDES / DRIVERS / PASSENGERS
+   arrays the tables use, and re-runs whenever those refresh.
+
+   Ride figures are bounded by the 50-document rides listener, which the
+   panel states on screen. Driver and passenger counts come from their own
+   uncapped collections, so those are true totals. */
+const REPORT_TYPES=[
+  {type:'PolaSolo', emoji:'🚖', badge:'active'},
+  {type:'PolaShare',emoji:'👥', badge:'online'},
+  {type:'PolaRent', emoji:'🗓️', badge:'done'},
+];
+
+function rpEscape(s){
+  return String(s).replace(/[&<>"']/g,
+    c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function rpSet(id,value){
+  const el=document.getElementById(id);
+  if(el)el.textContent=value;
+}
+function rpPeso(n){return '₱'+Math.round(n).toLocaleString('en-PH');}
+function rpEmpty(icon,title){
+  return `<div class="empty-state"><div class="es-icon">${icon}</div><div class="es-title">${title}</div></div>`;
+}
+
+function buildReports(){
+  if(!document.getElementById('rp-rides'))return;
+
+  const done=RIDES.filter(r=>r.status==='done');
+  const cancelled=RIDES.filter(r=>r.status==='cancelled');
+  const revenue=done.reduce((s,r)=>s+(Number(r.fare)||0),0);
+  const closed=done.length+cancelled.length;
+
+  /* DRIVERS collapses the Firestore status: 'approved' arrives as online or
+     offline, and rejected applications are filtered out upstream. Anything
+     not pending is therefore an approved driver. */
+  const approved=DRIVERS.filter(d=>d.status!=='pending').length;
+  const online=DRIVERS.filter(d=>d.status==='online').length;
+
+  rpSet('rp-rides',      done.length);
+  rpSet('rp-rides-sub',  done.length?`of ${RIDES.length} loaded rides`:'No completed rides yet');
+  rpSet('rp-revenue',    rpPeso(revenue));
+  rpSet('rp-avgfare',    done.length?rpPeso(revenue/done.length):'₱0');
+  rpSet('rp-cancel',     (closed?Math.round(cancelled.length/closed*100):0)+'%');
+  rpSet('rp-cancel-sub', closed?`${cancelled.length} cancelled of ${closed} closed`:'No closed rides yet');
+  rpSet('rp-drivers',    approved);
+  rpSet('rp-drivers-sub',`${online} online now`);
+  rpSet('rp-passengers', PASSENGERS.length);
+
+  buildTopDrivers(done);
+  buildReportRoutes(done);
+  buildTypeBreakdown(done);
+}
+
+/* Ranked by completed rides. A ride still searching has no driver to credit,
+   so those rows are skipped rather than bucketed under "Searching…". */
+function buildTopDrivers(done){
+  const box=document.getElementById('rp-topdrivers');
+  if(!box)return;
+
+  const counts=new Map();
+  done.forEach(r=>{
+    if(!r.drv||r.drv==='Searching…')return;
+    counts.set(r.drv,(counts.get(r.drv)||0)+1);
+  });
+
+  const top=[...counts.entries()]
+    .map(([name,count])=>({name,count}))
+    .sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name))
+    .slice(0,5);
+
+  if(!top.length)return void(box.innerHTML=rpEmpty('🏆','No completed rides yet'));
+
+  const max=top[0].count;
+  box.innerHTML=top.map((d,i)=>`
+    <div class="bar-row">
+      <div class="bar-lbl" title="${rpEscape(d.name)}">${rpEscape(d.name)}</div>
+      <div class="bar-track"><div class="bar-fill${i===top.length-1?' grn':''}" style="width:${(d.count/max*100).toFixed(2)}%"></div></div>
+      <div class="bar-val">${d.count}</div>
     </div>`).join('');
+}
+
+function buildReportRoutes(done){
+  const box=document.getElementById('rp-toproutes');
+  if(!box)return;
+
+  const counts=new Map();
+  done.forEach(r=>{
+    const label=`${r.from} → ${r.to}`;
+    counts.set(label,(counts.get(label)||0)+1);
+  });
+
+  const top=[...counts.entries()]
+    .map(([label,count])=>({label,count}))
+    .sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label))
+    .slice(0,5);
+
+  if(!top.length)return void(box.innerHTML=rpEmpty('🗺️','No completed rides yet'));
+
+  const max=top[0].count;
+  box.innerHTML=top.map((r,i)=>`
+    <div class="bar-row">
+      <div class="bar-lbl" title="${rpEscape(r.label)}">${rpEscape(r.label)}</div>
+      <div class="bar-track"><div class="bar-fill${i===top.length-1?' grn':''}" style="width:${(r.count/max*100).toFixed(2)}%"></div></div>
+      <div class="bar-val">${r.count}</div>
+    </div>`).join('');
+}
+
+function buildTypeBreakdown(done){
+  const tb=document.getElementById('rp-typebody');
+  if(!tb)return;
+
+  if(!done.length){
+    tb.innerHTML=`<tr><td colspan="6">${rpEmpty('📋','No completed rides yet')}</td></tr>`;
+    return;
+  }
+
+  tb.innerHTML=REPORT_TYPES.map(t=>{
+    const rows=done.filter(r=>r.type===t.type);
+    const rev=rows.reduce((s,r)=>s+(Number(r.fare)||0),0);
+    const share=Math.round(rows.length/done.length*100);
+
+    const routeCounts=new Map();
+    rows.forEach(r=>{
+      const label=`${r.from} → ${r.to}`;
+      routeCounts.set(label,(routeCounts.get(label)||0)+1);
+    });
+    const topRoute=[...routeCounts.entries()]
+      .sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0];
+
+    return `<tr>
+      <td><span class="badge ${t.badge}">${t.emoji} ${t.type}</span></td>
+      <td class="td-bold">${rows.length}</td>
+      <td>${share}%</td>
+      <td class="td-bold" style="color:var(--grn2)">${rpPeso(rev)}</td>
+      <td class="td-mono">${rows.length?rpPeso(rev/rows.length):'—'}</td>
+      <td>${topRoute?rpEscape(topRoute[0]):'—'}</td>
+    </tr>`;
+  }).join('');
 }
 
 /* ══ FILTERS ══ */
@@ -1266,26 +1717,113 @@ function filterDriverStatus(f,el){
   buildDriversTable(filtered);
 }
 
-/* ══ FARES ══ */
-function saveFare(key){
-  const inp=document.getElementById('fi-'+key);
-  const v=parseInt(inp.value);
-  if(isNaN(v)||v<5){showToast('Fare must be at least ₱5','red');return;}
-  routeFares[key]=v;
-  showToast('✅ Fare saved: ₱'+v,'grn');
+/* ══ RIDE TYPE FARES ══
+   Persisted as one settings/fares document. Defaults mirror what the app
+   actually falls back to (FareService in lib/core/services/fare_service.dart)
+   so an unsaved document shows the rates passengers are actually being
+   charged rather than zeros.
+
+   Only five fields, not six: fare-default-base *is* PolaSolo's base fare —
+   FareService has exactly one base-fare number (defaultBaseFare, falling
+   back to solo.baseFare for older documents), used for both PolaSolo (×
+   surcharge) and PolaShare (per seat) pricing, so a second "PolaSolo base
+   fare" field would just be the same number under a second name. And
+   share.farePerSeat was never a real setting — FareService never reads it,
+   and the PolaShare card's own copy says why: "The route's base fare — set
+   it per route below." Both were stale leftovers from before the Default
+   Base Fare card and the route table existed; the HTML already dropped
+   their inputs; this just stops asking for them. */
+const FARE_DEFAULTS={
+  solo: {baseFare:20,surcharge:1.3},
+  share:{maxSeats:5},
+  rent: {hourlyRate:60,minHours:1},
+};
+
+const FARE_INPUTS=[
+  ['fare-default-base',  'solo', 'baseFare'],
+  ['fare-solo-surcharge','solo', 'surcharge'],
+  ['fare-share-max',     'share','maxSeats'],
+  ['fare-rent-rate',     'rent', 'hourlyRate'],
+  ['fare-rent-min',      'rent', 'minHours'],
+];
+
+let fareSettingsLoaded=false;
+
+function fareStatus(text){
+  const el=document.getElementById('fare-status');
+  if(el)el.textContent=text;
 }
-function saveAllFares(){
-  document.querySelectorAll('.fi-inp').forEach(inp=>{
-    const v=parseInt(inp.value);
-    if(!isNaN(v)&&v>=5){const k=inp.id.replace('fi-','');routeFares[k]=v;}
-  });
-  showToast('✅ All fare rates saved successfully','grn');
+
+/* Read once per session when the panel is first opened — these change rarely,
+   so a live listener would be a standing read for no benefit. Also hydrates
+   ROUTE_FARE_STATE from the same document's routes map, and refreshes the
+   route table so it reflects the real loaded default/surcharge/custom fares
+   instead of the pre-load fallback constants it initially rendered with. */
+async function loadRideTypeFares(){
+  if(fareSettingsLoaded)return;
+  if(!window.loadFareSettings){fareStatus('Not connected to Firebase.');return;}
+
+  fareStatus('Loading saved fares…');
+  try{
+    const saved=await window.loadFareSettings();
+    FARE_INPUTS.forEach(([id,group,key])=>{
+      const inp=document.getElementById(id);
+      if(!inp)return;
+      const v=saved&&saved[group]&&saved[group][key];
+      inp.value=(typeof v==='number')?v:FARE_DEFAULTS[group][key];
+    });
+
+    ROUTE_FARE_STATE={};
+    const savedRoutes=saved&&saved.routes;
+    if(savedRoutes&&typeof savedRoutes==='object'){
+      ROUTE_PAIRS.forEach(r=>{
+        const v=savedRoutes[r.fareKey];
+        if(typeof v==='number')ROUTE_FARE_STATE[r.domId]=v;
+      });
+    }
+
+    fareSettingsLoaded=true;
+    fareStatus(saved
+      ? 'Loaded from settings/fares.'
+      : 'No saved fares yet — showing the rates built into the app.');
+  }catch(e){
+    FARE_INPUTS.forEach(([id,group,key])=>{
+      const inp=document.getElementById(id);
+      if(inp&&inp.value==='')inp.value=FARE_DEFAULTS[group][key];
+    });
+    fareStatus('Could not load saved fares.');
+    showToast('Could not load fares: '+e.message,'red');
+  }
+  renderRouteComputed();
 }
-function saveSurcharge(){
-  const v=parseInt(document.getElementById('solo-inp').value);
-  if(isNaN(v)||v<0){showToast('Invalid surcharge value','red');return;}
-  soloSurcharge=v;
-  showToast('✅ PolaSolo surcharge updated to ₱'+v,'grn');
+
+async function saveRideTypeFares(){
+  if(!window.saveFareSettings){showToast('Not connected to Firebase.','red');return;}
+
+  const payload={solo:{},share:{},rent:{}};
+  for(const [id,group,key] of FARE_INPUTS){
+    const v=parseFloat((document.getElementById(id)||{}).value);
+    if(isNaN(v)||v<0){showToast('Every fare field needs a valid number.','red');return;}
+    payload[group][key]=v;
+  }
+  if(payload.solo.surcharge<1){
+    showToast('Surcharge multiplier must be at least 1.','red');return;
+  }
+  if(payload.share.maxSeats<1||payload.rent.minHours<1){
+    showToast('Maximum seats and minimum hours must be at least 1.','red');return;
+  }
+
+  const btn=document.getElementById('fare-save-btn');
+  if(btn)btn.disabled=true;
+  try{
+    await window.saveFareSettings(payload);
+    fareStatus('Saved to settings/fares.');
+    showToast('✅ Fare settings saved','grn');
+  }catch(e){
+    showToast('Could not save fares: '+e.message,'red');
+  }finally{
+    if(btn)btn.disabled=false;
+  }
 }
 
 /* ══ DRIVER ACTIONS ══ */
@@ -1293,27 +1831,176 @@ function saveSurcharge(){
    polamove_admin_firebase.js — they write drivers/{uid}.status to Firestore,
    which the mobile app streams live. Do not redefine them here. */
 
+/* ══ DRIVER APPLICATIONS ══
+   "Approve Driver" opens the full pending queue; each row can then be
+   inspected in the existing registration-review modal before approving. */
+
+/* uid of the application currently open in the review modal */
+let currentApplicationUid=null;
+
+function openApproveModal(){
+  document.getElementById('pending-modal').classList.add('show');
+  buildPendingTable();
+}
+function closePendingModal(){document.getElementById('pending-modal').classList.remove('show');}
+
+/* Re-rendered by polamove_admin_firebase.js on every /drivers snapshot, so a
+   driver who applies (or gets approved) appears/disappears on its own. */
+function buildPendingTable(){
+  const tb=document.getElementById('pending-tb');
+  if(!tb)return;
+
+  if(PENDING_STATE==='loading')
+    return void(tb.innerHTML=pendingStateRow('⏳','Loading driver applications…'));
+  if(PENDING_STATE==='error')
+    return void(tb.innerHTML=pendingStateRow('⚠️','Unable to load driver applications','Check your connection, then reopen this window.'));
+  if(!PENDING.length)
+    return void(tb.innerHTML=pendingStateRow('✅','No pending driver applications','New applications appear here automatically.'));
+
+  tb.innerHTML=PENDING.map(d=>`
+    <tr>
+      <td><div class="td-bold td-link" onclick="openDriverApplication('${d.uid}')">${d.name}</div></td>
+      <td><span class="badge pending">${d.status}</span></td>
+      <td class="td-mono" style="color:var(--t3)">${d.submittedLabel}</td>
+      <td style="display:flex;gap:5px;padding:8px 14px">
+        <button class="act-btn approve" onclick="approvePendingDriver('${d.uid}')">✓ Approve</button>
+      </td>
+    </tr>`).join('');
+}
+
+function pendingStateRow(icon,title,sub=''){
+  return `<tr><td colspan="4"><div class="empty-state"><div class="es-icon">${icon}</div><div class="es-title">${title}</div>${sub?`<div class="es-sub">${sub}</div>`:''}</div></td></tr>`;
+}
+
 /* ══ MODAL ══ */
-function openApproveModal(){document.getElementById('approve-modal').classList.add('show');}
-function closeModal(){document.getElementById('approve-modal').classList.remove('show');}
+/* Renders one document as a clickable thumbnail, or a placeholder when it
+   can't be shown. storedLocally covers a driver registered before the
+   Cloudinary migration — there's no URL to fetch at all. A missing/blank
+   url covers the same thing for a single document. Both render the same way
+   a broken image would (handleDocThumbError, below) reaches once loading a
+   real URL fails — so a broken-image icon never appears.
+
+   The <img> src requests Cloudinary's w_240,q_auto,f_auto transform (see
+   cloudinaryThumb() in polamove_admin_firebase.js) rather than the full
+   original — the click-through link still opens doc.url untransformed. */
+function docThumbHtml(doc,storedLocally){
+  const placeholder=text=>`
+    <div class="doc-thumb-wrap">
+      <div class="doc-thumb placeholder">${text}</div>
+      <div class="doc-thumb-label">${doc.label}</div>
+    </div>`;
+
+  if(storedLocally)return placeholder('Stored on device — not viewable');
+  if(!doc.url)return placeholder('Document unavailable');
+
+  return `
+    <div class="doc-thumb-wrap">
+      <a href="${doc.url}" target="_blank" rel="noopener">
+        <img class="doc-thumb" src="${doc.thumbUrl}" alt="${doc.label}" onerror="handleDocThumbError(this)">
+      </a>
+      <div class="doc-thumb-label">${doc.label}</div>
+    </div>`;
+}
+
+/* Swaps a thumbnail that failed to load for the same text placeholder used
+   when there's no URL at all. */
+function handleDocThumbError(img){
+  const wrap=img.closest('.doc-thumb-wrap');
+  if(!wrap)return;
+  const label=wrap.querySelector('.doc-thumb-label')?.textContent||'';
+  wrap.innerHTML=`<div class="doc-thumb placeholder">Document unavailable</div><div class="doc-thumb-label">${label}</div>`;
+}
+
+/* Opens the existing registration-review modal for one application. */
+function openDriverApplication(uid){
+  const d=PENDING.find(x=>x.uid===uid);
+  if(!d){showToast('That application is no longer pending.','amb');return;}
+  currentApplicationUid=uid;
+
+  const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+  set('am-name',d.name);
+  set('am-phone',d.phone);
+  set('am-email',d.email);
+  set('am-barangay',d.barangay);
+  set('am-plate',d.plate);
+  set('am-license',d.licenseNo);
+  set('am-expiry',d.licenseExpiry);
+  set('am-submitted',d.submittedLabel);
+  set('am-status',d.status);
+
+  document.getElementById('am-docs').innerHTML=
+    `<div class="doc-thumb-row">`
+    +d.documents.map(doc=>docThumbHtml(doc,d.storedLocally)).join('')
+    +`</div>`;
+
+  document.getElementById('approve-modal').classList.add('show');
+}
+
+function closeModal(){
+  document.getElementById('approve-modal').classList.remove('show');
+  currentApplicationUid=null;
+}
+
+/* Approve straight from a queue row. */
+function approvePendingDriver(uid){
+  const d=PENDING.find(x=>x.uid===uid);
+  if(!d){showToast('That application is no longer pending.','amb');return;}
+  if(!window.approveDriverByUid){showToast('Not connected to Firebase.','red');return;}
+  window.approveDriverByUid(uid,d.name);
+}
+
+/* Approve / reject the application open in the review modal. Both write to the
+   existing drivers/{uid} document — see setDriverStatus() in the Firebase layer. */
 function approveDriver(){
-  const d=DRIVERS.find(x=>x.status==='pending');
-  if(d&&window.approveDriverByUid){
-    window.approveDriverByUid(d.uid,d.name);
+  const uid=currentApplicationUid;
+  const d=PENDING.find(x=>x.uid===uid);
+  if(uid&&d&&window.approveDriverByUid){
+    window.approveDriverByUid(uid,d.name);
   }else{
-    showToast('No pending applications.','amb');
+    showToast('No application selected.','amb');
   }
   closeModal();
 }
 
 function rejectDriver(){
-  const d=DRIVERS.find(x=>x.status==='pending');
-  if(d&&window.rejectDriverByUid){
-    window.rejectDriverByUid(d.uid,d.name);
+  const uid=currentApplicationUid;
+  const d=PENDING.find(x=>x.uid===uid);
+  if(uid&&d&&window.rejectDriverByUid){
+    window.rejectDriverByUid(uid,d.name);
   }else{
-    showToast('No pending applications.','amb');
+    showToast('No application selected.','amb');
   }
   closeModal();
+}
+
+/* ══ ADMIN IDENTITY POPOVER ══
+   Read on first open rather than at login — one document read, and only if
+   the admin actually opens the menu. */
+let adminIdentityLoaded=false;
+
+function toggleAdminMenu(e){
+  if(e)e.stopPropagation();
+  const pop=document.getElementById('admin-pop');
+  if(!pop)return;
+  if(pop.classList.toggle('show'))loadAdminIdentity();
+}
+
+function closeAdminMenu(){
+  const pop=document.getElementById('admin-pop');
+  if(pop)pop.classList.remove('show');
+}
+
+async function loadAdminIdentity(){
+  if(adminIdentityLoaded||!window.getAdminIdentity)return;
+  try{
+    const id=await window.getAdminIdentity();
+    if(!id)return;
+    rpSet('ap-name',capitalise(id.name));
+    rpSet('ap-mail',id.email);
+    adminIdentityLoaded=true;
+  }catch(e){
+    // Leave the placeholders rather than showing a half-filled identity.
+  }
 }
 
 /* ══ REFRESH ══ */
@@ -1337,10 +2024,24 @@ document.addEventListener('DOMContentLoaded',()=>{
   buildDashRides();
   buildTopRoutes();
   setTimeout(()=>{initAdmMap();},400);
-  // Keyboard shortcut: Escape closes modal
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+  // Keyboard shortcut: Escape closes the topmost modal
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    closeAdminMenu();
+    if(document.getElementById('approve-modal').classList.contains('show'))closeModal();
+    else closePendingModal();
+  });
   // Click outside modal closes it
-  document.getElementById('approve-modal').addEventListener('click',e=>{if(e.target===document.getElementById('approve-modal'))closeModal();});
+  document.getElementById('approve-modal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+  document.getElementById('pending-modal').addEventListener('click',e=>{if(e.target===e.currentTarget)closePendingModal();});
+  // Click outside the admin popover closes it. The trigger stops propagation,
+  // so opening it never immediately closes it again.
+  document.addEventListener('click',e=>{
+    const pop=document.getElementById('admin-pop');
+    if(!pop||!pop.classList.contains('show'))return;
+    if(pop.contains(e.target))return;
+    closeAdminMenu();
+  });
 });
 </script>
 <script type="module" src="polamove_admin_firebase.js"></script>

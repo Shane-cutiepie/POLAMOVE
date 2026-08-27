@@ -1,10 +1,10 @@
-/// The 26 barangays of Polangui, Albay. Single source of truth — referenced by
-/// driver sign-up and profile editing.
+/// Generic barangay labels, per adviser instruction for this capstone.
+/// Replaces the named Polangui barangays previously listed here.
 const List<String> kPolanguiBarangays = [
-  'Barangay 1 (Pob.)', 'Barangay 2 (Pob.)', 'Barangay 3 (Pob.)',
-  'Barangay 4 (Pob.)', 'Barangay 5 (Pob.)', 'Aniog', 'Busac',
-  'Cararayan', 'Doña Tomasa', 'Itaran', 'La Purisima', 'Lanigay',
-  'Lidong', 'Lourdes', 'Magpanambo', 'Magurang', 'Napo', 'Ponso',
-  'Sabang', 'San Francisco', 'San Isidro', 'San Miguel', 'San Vicente',
-  'Santa Cruz', 'Santicon', 'Yapad',
+  'Barangay A', 'Barangay B', 'Barangay C', 'Barangay D', 'Barangay E',
+  'Barangay F', 'Barangay G', 'Barangay H', 'Barangay I', 'Barangay J',
+  'Barangay K', 'Barangay L', 'Barangay M', 'Barangay N', 'Barangay O',
+  'Barangay P', 'Barangay Q', 'Barangay R', 'Barangay S', 'Barangay T',
+  'Barangay U', 'Barangay V', 'Barangay W', 'Barangay X', 'Barangay Y',
+  'Barangay Z',
 ];

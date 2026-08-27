@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/research_notice.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/utils/validators.dart';
+import '../shared/form_fields.dart';
+import '../shared/privacy_screen.dart';
 import '../passenger/passenger_home_screen.dart';
 
 class AuthPassengerScreen extends StatefulWidget {
@@ -14,6 +17,7 @@ class AuthPassengerScreen extends StatefulWidget {
 class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
   bool _isSignUp = true;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _isSubmitting = false;
   final Map<String, String?> _errors = {};
 
@@ -23,6 +27,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
   final _phCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
+  final _confirmPwCtrl = TextEditingController();
 
   // Log In controllers
   final _liPhCtrl = TextEditingController();
@@ -35,6 +40,11 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
       _errors['phone'] = Validators.phone(_phCtrl.text);
       _errors['email'] = Validators.email(_emailCtrl.text);
       _errors['password'] = Validators.password(_pwCtrl.text);
+      _errors['confirmPassword'] = _confirmPwCtrl.text.isEmpty
+          ? 'Please confirm your password'
+          : (_confirmPwCtrl.text != _pwCtrl.text
+              ? 'Passwords do not match'
+              : null);
     });
     return _errors.values.every((e) => e == null);
   }
@@ -90,6 +100,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
     _phCtrl.dispose();
     _emailCtrl.dispose();
     _pwCtrl.dispose();
+    _confirmPwCtrl.dispose();
     _liPhCtrl.dispose();
     _liPwCtrl.dispose();
     super.dispose();
@@ -197,25 +208,33 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
       children: [
         Row(
           children: [
-            Expanded(child: _FormField(label: 'First Name', controller: _fnCtrl, placeholder: 'Maria',
+            Expanded(child: AppFormField(label: 'First Name', controller: _fnCtrl, placeholder: 'Maria',
                 errorText: _errors['firstName'])),
             const SizedBox(width: 8),
-            Expanded(child: _FormField(label: 'Last Name', controller: _lnCtrl, placeholder: 'Santos',
+            Expanded(child: AppFormField(label: 'Last Name', controller: _lnCtrl, placeholder: 'Santos',
                 errorText: _errors['lastName'])),
           ],
         ),
         const SizedBox(height: 12),
-        _FormField(label: 'Phone', controller: _phCtrl, placeholder: '09XX XXX XXXX',
+        AppFormField(label: 'Phone', controller: _phCtrl, placeholder: '09XX XXX XXXX',
             keyboardType: TextInputType.phone, errorText: _errors['phone']),
         const SizedBox(height: 12),
-        _FormField(label: 'Email', controller: _emailCtrl, placeholder: 'maria@email.com',
+        AppFormField(label: 'Email', controller: _emailCtrl, placeholder: 'maria@email.com',
             keyboardType: TextInputType.emailAddress, errorText: _errors['email']),
         const SizedBox(height: 12),
-        _FormField(label: 'Password', controller: _pwCtrl, placeholder: 'Create password',
+        AppFormField(label: 'Password', controller: _pwCtrl, placeholder: 'Create password',
             obscure: _obscurePassword,
             onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
             errorText: _errors['password']),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
+        AppFormField(label: 'Confirm Password', controller: _confirmPwCtrl,
+            placeholder: 'Re-enter password',
+            obscure: _obscureConfirmPassword,
+            onToggleObscure: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+            errorText: _errors['confirmPassword']),
+        const SizedBox(height: 16),
+        const _RegistrationNotice(),
+        const SizedBox(height: 16),
         _PrimaryButton(label: _isSubmitting ? 'Creating Account…' : 'Create Account →',
             onTap: _isSubmitting ? null : _submitSignUp),
         const SizedBox(height: 10),
@@ -228,11 +247,11 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FormField(label: 'Email or Phone Number', controller: _liPhCtrl,
+        AppFormField(label: 'Email or Phone Number', controller: _liPhCtrl,
             placeholder: 'maria@email.com or 09XX XXX XXXX',
             errorText: _errors['liPhone']),
         const SizedBox(height: 12),
-        _FormField(label: 'Password', controller: _liPwCtrl, placeholder: 'Your password',
+        AppFormField(label: 'Password', controller: _liPwCtrl, placeholder: 'Your password',
             obscure: _obscurePassword,
             onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
             errorText: _errors['liPassword']),
@@ -247,6 +266,39 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
 }
 
 // ── Shared Widgets ──────────────────────────────────
+
+class _RegistrationNotice extends StatelessWidget {
+  const _RegistrationNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primaryTint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.22)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text(kRegistrationNoticeTitle,
+            style: TextStyle(fontFamily: 'Syne', fontSize: 13,
+                fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 6),
+        const Text(kRegistrationNoticeBody,
+            style: TextStyle(fontFamily: 'DM Sans', fontSize: 12,
+                color: AppColors.textSecondary, height: 1.5)),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PrivacyScreen())),
+          child: const Text(kRegistrationNoticeViewPrivacyButton,
+              style: TextStyle(fontFamily: 'DM Sans', fontSize: 12,
+                  fontWeight: FontWeight.w700, color: AppColors.primary)),
+        ),
+      ]),
+    );
+  }
+}
 
 class _PolaMoveLogo extends StatelessWidget {
   final double fontSize;
@@ -324,39 +376,6 @@ class _TabButton extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _FormField extends StatelessWidget {
-  final String label;
-  final String placeholder;
-  final TextEditingController controller;
-  final TextInputType? keyboardType;
-  final bool obscure;
-  final VoidCallback? onToggleObscure;
-  final String? errorText;
-
-  const _FormField({required this.label, required this.placeholder, required this.controller,
-      this.keyboardType, this.obscure = false, this.onToggleObscure, this.errorText});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: AppColors.textSecondary, letterSpacing: 0.7)),
-      const SizedBox(height: 5),
-      TextFormField(
-        controller: controller, keyboardType: keyboardType, obscureText: obscure,
-        style: const TextStyle(fontFamily: 'DM Sans', fontSize: 14,
-            fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: placeholder, errorText: errorText,
-          suffixIcon: onToggleObscure != null
-              ? GestureDetector(onTap: onToggleObscure,
-                  child: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                      color: AppColors.textTertiary, size: 18))
-              : null),
-      ),
-    ]);
   }
 }
 

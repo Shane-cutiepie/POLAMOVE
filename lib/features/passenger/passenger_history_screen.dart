@@ -1,19 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/cancel_reasons.dart';
 import '../../core/services/ride_service.dart';
+import '../shared/chat_screen.dart';
+import '../shared/red_header.dart';
 
-class PassengerHistoryScreen extends StatelessWidget {
-  const PassengerHistoryScreen({super.key});
+class PassengerHistoryScreen extends StatefulWidget {
+  /// Returns the bottom-nav shell to the Home tab. This screen is a tab, not
+  /// a pushed route, so there is nothing for `Navigator.pop` to pop.
+  final VoidCallback? onBack;
+
+  const PassengerHistoryScreen({super.key, this.onBack});
+
+  @override
+  State<PassengerHistoryScreen> createState() => _PassengerHistoryScreenState();
+}
+
+class _PassengerHistoryScreenState extends State<PassengerHistoryScreen> {
+  /// Driver display labels ("Carlos Reyes · POLO-1234") keyed by driver uid,
+  /// resolved once per driver so scrolling a long history doesn't re-read
+  /// users/{uid} and drivers/{uid} for every row.
+  final Map<String, String> _driverLabels = {};
+
+  /// Plain driver names (no plate), keyed by uid — used as the chat
+  /// screen's title rather than the combined "name · plate" label above.
+  final Map<String, String> _driverNames = {};
+
+  Future<void> _resolveDrivers(Iterable<String> driverIds) async {
+    final missing =
+        driverIds.where((id) => !_driverLabels.containsKey(id)).toSet();
+    if (missing.isEmpty) return;
+
+    for (final id in missing) {
+      _driverLabels[id] = '—'; // claim the slot so we don't fetch it twice
+      _driverNames[id] = '—';
+      final user = await RideService.userInfo(id);
+      final driver = await RideService.driverInfo(id);
+      final name =
+          '${user?['firstName'] ?? ''} ${user?['lastName'] ?? ''}'.trim();
+      final plate = driver?['plateNo'] ?? '—';
+      _driverNames[id] = name.isEmpty ? '—' : name;
+      _driverLabels[id] = '${name.isEmpty ? '—' : name} · $plate';
+    }
+    if (mounted) setState(() {});
+  }
 
   /// Flattens a ride document into the map shape _RideCard already renders.
-  static Map<String, dynamic> _toCard(Map<String, dynamic> ride) {
+  static Map<String, dynamic> _toCard(Map<String, dynamic> ride, String rideId) {
     final type = _shortType(ride['rideType']);
     final fare = (ride['totalFare'] ?? 0).toDouble();
     final requestedAt = ride['requestedAt'];
     final date = requestedAt is Timestamp ? requestedAt.toDate() : null;
 
     return {
+      'rideId': rideId,
       'type': type,
       'emoji': _emoji(type),
       'from': ride['pickup']?['name'] ?? '—',
@@ -23,6 +64,11 @@ class PassengerHistoryScreen extends StatelessWidget {
       'fare': '₱${fare.toStringAsFixed(0)}',
       'fareValue': fare,
       'status': _statusLabel(ride['status']),
+      'driverId': ride['driverId'] as String?,
+      'cancellationFee': (ride['cancellationFee'] ?? 0).toDouble(),
+      'cancelReason': ride['cancelReason'] as String?,
+      'cancelReasonText': ride['cancelReasonText'] as String?,
+      'cancelledByRole': ride['cancelledByRole'] as String?,
     };
   }
 
@@ -65,21 +111,10 @@ class PassengerHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(children: [
-      // Header
-      Container(
-        color: AppColors.surface,
-        child: SafeArea(bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Ride History', style: TextStyle(fontFamily: 'Syne',
-                  fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Text('Your past trips in Polangui',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-            ]),
-          ),
-        ),
+      RedHeader(
+        title: 'Ride History',
+        subtitle: 'Your past trips in Polangui',
+        onBack: widget.onBack,
       ),
       Expanded(
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -90,9 +125,15 @@ class PassengerHistoryScreen extends StatelessWidget {
                   child: CircularProgressIndicator(color: AppColors.primary));
             }
 
-            final rides = snapshot.data!.docs
-                .map((d) => _toCard(d.data()))
-                .toList();
+            final docs = snapshot.data!.docs;
+            final driverIds = docs
+                .map((d) => d.data()['driverId'] as String?)
+                .whereType<String>();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _resolveDrivers(driverIds);
+            });
+
+            final rides = docs.map((d) => _toCard(d.data(), d.id)).toList();
             final completed =
                 rides.where((r) => r['status'] == 'Completed').toList();
             final spent = completed.fold<double>(
@@ -102,7 +143,7 @@ class PassengerHistoryScreen extends StatelessWidget {
               // Summary chips
               Container(
                 color: AppColors.surface,
-                padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
+                padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
                 child: Row(children: [
                   _SummaryChip(label: 'Total Rides',
                       value: '${completed.length}', emoji: '🛺'),
@@ -131,7 +172,11 @@ class PassengerHistoryScreen extends StatelessWidget {
                         padding: const EdgeInsets.fromLTRB(15, 14, 15, 20),
                         itemCount: rides.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) => _RideCard(ride: rides[i]),
+                        itemBuilder: (_, i) => _RideCard(
+                          ride: rides[i],
+                          driverLabel: _driverLabel(rides[i]['driverId']),
+                          driverName: _driverName(rides[i]['driverId']),
+                        ),
                       ),
               ),
             ]);
@@ -139,6 +184,18 @@ class PassengerHistoryScreen extends StatelessWidget {
         ),
       ),
     ]);
+  }
+
+  /// A ride can finish without ever having a driver — cancelled while still
+  /// searching — so a missing id is a real state, not a failed lookup.
+  String _driverLabel(String? driverId) {
+    if (driverId == null) return 'Driver not assigned';
+    return '🛺 ${_driverLabels[driverId] ?? '—'}';
+  }
+
+  String _driverName(String? driverId) {
+    if (driverId == null) return '—';
+    return _driverNames[driverId] ?? '—';
   }
 }
 
@@ -171,10 +228,29 @@ class _SummaryChip extends StatelessWidget {
 
 class _RideCard extends StatelessWidget {
   final Map<String, dynamic> ride;
-  const _RideCard({required this.ride});
+  final String driverLabel;
+  final String driverName;
+  const _RideCard({required this.ride, required this.driverLabel, required this.driverName});
 
   Color get _statusColor => ride['status'] == 'Completed' ? AppColors.success : AppColors.warning;
   Color get _statusBg => ride['status'] == 'Completed' ? AppColors.successTint : const Color(0x1AB45309);
+
+  /// Chat stays readable after a trip ends — but a ride cancelled while still
+  /// searching never had a driver, so there's no thread to open.
+  bool get _canChat =>
+      ride['driverId'] != null &&
+      (ride['status'] == 'Completed' || ride['status'] == 'Cancelled');
+
+  void _openChat(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        rideId: ride['rideId'] as String,
+        otherUid: ride['driverId'] as String,
+        otherName: driverName,
+        otherRole: 'driver',
+      ),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +307,34 @@ class _RideCard extends StatelessWidget {
                 fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
           ])),
         ]),
+        const SizedBox(height: 8),
+        // Driver
+        Row(children: [
+          Expanded(child: Text(driverLabel, style: const TextStyle(fontSize: 11,
+              color: AppColors.textSecondary))),
+          if (_canChat) ...[
+            const SizedBox(width: 8),
+            _ChatIconButton(onTap: () => _openChat(context)),
+          ],
+        ]),
+        if (ride['status'] == 'Cancelled') ...[
+          const SizedBox(height: 6),
+          Text(
+            cancelReasonLabel(
+              cancelledByRole: ride['cancelledByRole'] as String?,
+              reason: ride['cancelReason'] as String?,
+              reasonText: ride['cancelReasonText'] as String?,
+            ),
+            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
+          if ((ride['cancellationFee'] as double) > 0) ...[
+            const SizedBox(height: 3),
+            Text(
+              'Late cancellation fee: ₱${(ride['cancellationFee'] as double).toStringAsFixed(0)}',
+              style: const TextStyle(fontSize: 11, color: AppColors.warning),
+            ),
+          ],
+        ],
       ]),
     );
   }
@@ -242,5 +346,21 @@ class _RideCard extends StatelessWidget {
       case 'rent': return 'PolaRent';
       default: return 'Ride';
     }
+  }
+}
+
+class _ChatIconButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ChatIconButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(width: 30, height: 30,
+        decoration: BoxDecoration(color: AppColors.surfaceAlt, shape: BoxShape.circle,
+            border: Border.all(color: AppColors.border, width: 1.5)),
+        child: const Center(child: Text('💬', style: TextStyle(fontSize: 14)))),
+    );
   }
 }

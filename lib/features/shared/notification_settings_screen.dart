@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/sound_service.dart';
 
 // TODO: Firebase respect notificationPrefs when writing notifications
 /// Stores per-category notification preferences at
@@ -33,6 +34,7 @@ class _NotificationSettingsScreenState
     'announcement': true,
   };
 
+  bool _soundEnabled = true;
   bool _loading = true;
 
   @override
@@ -58,6 +60,7 @@ class _NotificationSettingsScreenState
         _prefs = {
           for (final c in _categories) c.$1: stored?[c.$1] as bool? ?? true,
         };
+        _soundEnabled = stored?['sound'] as bool? ?? true;
         _loading = false;
       });
     } catch (_) {
@@ -80,6 +83,33 @@ class _NotificationSettingsScreenState
       // Roll back so the switch can never show a preference that wasn't saved.
       if (!mounted) return;
       setState(() => _prefs[key] = previous);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Could not save your preference. Please try again.',
+            style: TextStyle(fontFamily: 'DM Sans')),
+        backgroundColor: AppColors.primaryDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
+  }
+
+  Future<void> _toggleSound(bool value) async {
+    final previous = _soundEnabled;
+    setState(() => _soundEnabled = value);
+    SoundService.setEnabled(value);
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'notificationPrefs.sound': value,
+      });
+    } catch (_) {
+      // Roll back so the switch can never show a preference that wasn't saved.
+      if (!mounted) return;
+      setState(() => _soundEnabled = previous);
+      SoundService.setEnabled(previous);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Could not save your preference. Please try again.',
             style: TextStyle(fontFamily: 'DM Sans')),
@@ -122,6 +152,13 @@ class _NotificationSettingsScreenState
                   ),
                   const SizedBox(height: 10),
                 ],
+                _PrefTile(
+                  title: 'Notification sounds',
+                  description: 'Play a short chime for new bookings, ride '
+                      'updates, and chat messages',
+                  value: _soundEnabled,
+                  onChanged: _toggleSound,
+                ),
               ],
             ),
     );

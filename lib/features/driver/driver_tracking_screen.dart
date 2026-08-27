@@ -2,8 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/polangui_locations.dart';
+import '../../core/services/chat_service.dart';
 import '../../core/services/ride_service.dart';
+import '../shared/cancel_ride_sheet.dart';
+import '../shared/chat_screen.dart';
+import '../shared/user_avatar.dart';
 
 class DriverTrackingScreen extends StatefulWidget {
   final String rideId;
@@ -31,7 +37,15 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
   int _step = 0; // 0=Heading to pickup, 1=Arrived, 2=Trip, 3=Done
   bool _busy = false;
 
-  static const LatLng _polangui = LatLng(13.2924, 123.4866);
+  // Passenger avatar, fetched once per passenger from users/{uid}.
+  String? _loadedPassengerId;
+  int _passengerAvatarIndex = 0;
+  String? _passengerAvatarUrl;
+
+  // Set directly from the ride stream — unlike the avatar, chat doesn't need
+  // to wait on an async lookup to know who the other party is.
+  String? _passengerId;
+  String? _rideStatus;
 
   final _stepTitles = [
     'Heading to Pickup',
@@ -104,6 +118,31 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
     }
   }
 
+  /// Reads the passenger's chosen preset avatar once per passenger. Called
+  /// from a post-frame callback so it never setStates during build.
+  Future<void> _loadPassengerAvatar(String passengerId) async {
+    _loadedPassengerId = passengerId;
+    final user = await RideService.userInfo(passengerId);
+    if (!mounted) return;
+    setState(() {
+      _passengerAvatarIndex = (user?['avatarIndex'] ?? 0) as int;
+      _passengerAvatarUrl = user?['avatarUrl'] as String?;
+    });
+  }
+
+  void _openChat() {
+    final passengerId = _passengerId;
+    if (passengerId == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        rideId: widget.rideId,
+        otherUid: passengerId,
+        otherName: widget.passengerName,
+        otherRole: 'passenger',
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -116,7 +155,17 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
                 child: CircularProgressIndicator(color: AppColors.primary));
           }
           final ride = snapshot.data!.data() ?? {};
-          _step = _stepFromStatus(ride['status'] as String?);
+          _rideStatus = ride['status'] as String?;
+          _step = _stepFromStatus(_rideStatus);
+
+          final passengerId = ride['passengerId'] as String?;
+          _passengerId = passengerId;
+          if (passengerId != null && passengerId != _loadedPassengerId) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _loadPassengerAvatar(passengerId);
+            });
+          }
+
           return _buildContent(context);
         },
       ),
@@ -130,14 +179,14 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
         // Map
         Expanded(child: Stack(children: [
           FlutterMap(
-            options: MapOptions(initialCenter: _polangui, initialZoom: 15,
+            options: MapOptions(initialCenter: kPolanguiCentre, initialZoom: 15,
               interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag)),
             children: [
               TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.polamove.app'),
               MarkerLayer(markers: [
-                Marker(point: _polangui, width: 40, height: 40,
+                Marker(point: kPolanguiCentre, width: 40, height: 40,
                   child: Container(
                     decoration: BoxDecoration(color: _statusColor, shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2.5),
@@ -173,7 +222,7 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
             padding: const EdgeInsets.fromLTRB(15, 12, 15, 18),
             child: Row(children: [
               GestureDetector(
-                onTap: () => _step == 3 ? Navigator.of(context).pop() : _showCancelDialog(),
+                onTap: () => _step == 3 ? Navigator.of(context).pop() : _cancelRide(),
                 child: Container(width: 31, height: 31,
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(9),
@@ -219,7 +268,8 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
             Container(width: 46, height: 46,
               decoration: BoxDecoration(color: AppColors.primaryTint, shape: BoxShape.circle,
                   border: Border.all(color: AppColors.primary.withOpacity(0.3), width: 1.5)),
-              child: const Center(child: Text('🧍', style: TextStyle(fontSize: 22)))),
+              child: UserAvatar(avatarUrl: _passengerAvatarUrl,
+                  avatarIndex: _passengerAvatarIndex, size: 46, emojiSize: 22)),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(widget.passengerName, style: const TextStyle(fontFamily: 'Syne',
@@ -229,11 +279,7 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
               Text('Fare: ${widget.fare} · Cash',
                   style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
             ])),
-            Row(children: [
-              _ActionBtn(emoji: '📞', onTap: () {}),
-              const SizedBox(width: 6),
-              _ActionBtn(emoji: '💬', onTap: () {}),
-            ]),
+            _ChatButton(rideId: widget.rideId, onTap: _openChat),
           ]),
         ),
         const SizedBox(height: 12),
@@ -318,86 +364,41 @@ class _DriverTrackingScreenState extends State<DriverTrackingScreen> {
     );
   }
 
-  void _showCancelDialog() {
-    showModalBottomSheet(context: context, backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(color: AppColors.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: AppColors.surfaceStrong,
-                  borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 18),
-          const Text('❌', style: TextStyle(fontSize: 40)),
-          const SizedBox(height: 10),
-          const Text('Cancel Trip?', style: TextStyle(fontFamily: 'Syne', fontSize: 18,
-              fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-          const SizedBox(height: 6),
-          const Text('Are you sure you want to cancel this ride?',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-          const SizedBox(height: 22),
-          SizedBox(width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                final messenger = ScaffoldMessenger.of(context);
-                try {
-                  await RideService.cancelRide(widget.rideId);
-                  navigator.pop();
-                  navigator.pop();
-                } on RideException catch (e) {
-                  navigator.pop();
-                  messenger.showSnackBar(SnackBar(
-                    content: Text(e.message,
-                        style: const TextStyle(fontFamily: 'DM Sans')),
-                    backgroundColor: AppColors.primaryDark,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ));
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0),
-              child: const Text('Yes, Cancel Trip', style: TextStyle(fontFamily: 'Syne',
-                  fontSize: 14, fontWeight: FontWeight.w700)),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              style: OutlinedButton.styleFrom(foregroundColor: AppColors.textSecondary,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  side: const BorderSide(color: Color(0x1C14142A), width: 1.5),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-              child: const Text('Keep Ride', style: TextStyle(fontFamily: 'DM Sans',
-                  fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ]),
-      ),
-    );
+  Future<void> _cancelRide() async {
+    final cancelled = await showCancelRideSheet(context,
+        rideId: widget.rideId, role: 'driver', status: _rideStatus);
+    if (cancelled && mounted) Navigator.of(context).pop();
   }
 }
 
-class _ActionBtn extends StatelessWidget {
-  final String emoji;
+/// Chat entry point on the passenger card, with a small unread-message dot
+/// positioned the same way as the bottom-nav Notifs tab badge.
+class _ChatButton extends StatelessWidget {
+  final String rideId;
   final VoidCallback onTap;
-  const _ActionBtn({required this.emoji, required this.onTap});
+  const _ChatButton({required this.rideId, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     return GestureDetector(
       onTap: onTap,
-      child: Container(width: 36, height: 36,
-        decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
-            border: Border.all(color: AppColors.border, width: 1.5)),
-        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 16)))));
+      child: Stack(clipBehavior: Clip.none, children: [
+        Container(width: 36, height: 36,
+          decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
+              border: Border.all(color: AppColors.border, width: 1.5)),
+          child: const Center(child: Text('💬', style: TextStyle(fontSize: 16)))),
+        if (uid != null)
+          Positioned(top: -2, right: -2, child: StreamBuilder<int>(
+            stream: ChatService.unreadCount(rideId, uid),
+            builder: (context, snapshot) {
+              if ((snapshot.data ?? 0) == 0) return const SizedBox.shrink();
+              return Container(width: 10, height: 10,
+                decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.surface, width: 1.5)));
+            },
+          )),
+      ]),
+    );
   }
 }

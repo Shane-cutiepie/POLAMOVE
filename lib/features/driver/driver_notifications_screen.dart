@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/ride_service.dart';
+import '../shared/red_header.dart';
 
 enum NotifCategory { ride, earnings, account, announcement }
 
 class _NotifItem {
+  final String id;
   final String title;
   final String message;
   final NotifCategory category;
@@ -13,6 +17,7 @@ class _NotifItem {
   final bool unread;
 
   const _NotifItem({
+    required this.id,
     required this.title,
     required this.message,
     required this.category,
@@ -61,7 +66,11 @@ class _NotifItem {
 }
 
 class DriverNotificationsScreen extends StatefulWidget {
-  const DriverNotificationsScreen({super.key});
+  /// Returns the bottom-nav shell to the Home tab. This screen is a tab, not
+  /// a pushed route, so there is nothing for `Navigator.pop` to pop.
+  final VoidCallback? onBack;
+
+  const DriverNotificationsScreen({super.key, this.onBack});
 
   @override
   State<DriverNotificationsScreen> createState() =>
@@ -78,9 +87,10 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
       .limit(50)
       .snapshots();
 
-  _NotifItem _toItem(Map<String, dynamic> data) {
+  _NotifItem _toItem(String id, Map<String, dynamic> data) {
     final createdAt = data['createdAt'];
     return _NotifItem(
+      id: id,
       title: data['title'] ?? '—',
       message: data['message'] ?? '—',
       category: _categoryFrom(data['category']),
@@ -132,6 +142,46 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
     }
   }
 
+  Future<void> _markRead(String notifId) async {
+    try {
+      await _collection.doc(notifId).update({'read': true});
+    } catch (_) {}
+  }
+
+  /// The list is a StreamBuilder, so the row disappears on its own once the
+  /// document is gone — nothing to remove from local state here.
+  Future<void> _deleteNotification(String notifId) async {
+    try {
+      await RideService.deleteNotification(notifId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Notification deleted.',
+            style: TextStyle(fontFamily: 'DM Sans')),
+        backgroundColor: AppColors.textPrimary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    } on RideException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.message, style: const TextStyle(fontFamily: 'DM Sans')),
+        backgroundColor: AppColors.primaryDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
+  }
+
+  Future<void> _confirmDelete(String notifId, String title) async {
+    HapticFeedback.mediumImpact();
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _DeleteNotifSheet(title: title),
+    );
+    if (confirmed == true) _deleteNotification(notifId);
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser!.uid;
@@ -139,58 +189,51 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _stream(uid),
       builder: (context, snapshot) {
-        final items =
-            (snapshot.data?.docs ?? const []).map((d) => _toItem(d.data())).toList();
+        final items = (snapshot.data?.docs ?? const [])
+            .map((d) => _toItem(d.id, d.data())).toList();
         final unreadCount = items.where((n) => n.unread).length;
 
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          appBar: AppBar(
-            backgroundColor: AppColors.background,
-            elevation: 0,
-            title: const Text(
-              'Notifications',
-              style: TextStyle(
-                fontFamily: 'Syne',
-                fontWeight: FontWeight.w800,
-                fontSize: 20,
-                color: AppColors.textPrimary,
-              ),
+        return Column(
+          children: [
+            RedHeader(
+              title: 'Notifications',
+              subtitle: 'Updates about your bookings',
+              onBack: widget.onBack,
+              action: unreadCount > 0
+                  ? RedHeaderAction(
+                      label: 'Mark all read',
+                      onTap: () => _markAllRead(uid),
+                    )
+                  : null,
             ),
-            actions: [
-              if (unreadCount > 0)
-                TextButton(
-                  onPressed: () => _markAllRead(uid),
-                  child: const Text(
-                    'Mark all read',
-                    style: TextStyle(
-                      fontFamily: 'DM Sans',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          body: !snapshot.hasData
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary))
-              : items.isEmpty
-                  ? const _EmptyState()
-                  : Column(
-                      children: [
-                        if (unreadCount > 0) _UnreadBanner(count: unreadCount),
-                        Expanded(
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                            itemCount: items.length,
-                            itemBuilder: (context, index) =>
-                                _NotifCard(item: items[index]),
-                          ),
+            Expanded(
+              child: !snapshot.hasData
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.primary))
+                  : items.isEmpty
+                      ? const _EmptyState()
+                      : Column(
+                          children: [
+                            if (unreadCount > 0)
+                              _UnreadBanner(count: unreadCount),
+                            Expanded(
+                              child: ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                                itemCount: items.length,
+                                itemBuilder: (context, index) => _NotifCard(
+                                  item: items[index],
+                                  onTap: items[index].unread
+                                      ? () => _markRead(items[index].id)
+                                      : null,
+                                  onLongPress: () => _confirmDelete(
+                                      items[index].id, items[index].title),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+            ),
+          ],
         );
       },
     );
@@ -208,7 +251,7 @@ class _UnreadBanner extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(20, 4, 20, 4),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.primaryTint,
+        color: AppColors.successTint,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
@@ -217,7 +260,7 @@ class _UnreadBanner extends StatelessWidget {
           fontFamily: 'DM Sans',
           fontWeight: FontWeight.w600,
           fontSize: 13,
-          color: AppColors.primary,
+          color: AppColors.success,
         ),
       ),
     );
@@ -226,7 +269,9 @@ class _UnreadBanner extends StatelessWidget {
 
 class _NotifCard extends StatelessWidget {
   final _NotifItem item;
-  const _NotifCard({required this.item});
+  final VoidCallback? onTap;
+  final VoidCallback onLongPress;
+  const _NotifCard({required this.item, required this.onTap, required this.onLongPress});
 
   String _relativeTime(DateTime t) {
     final now = DateTime.now();
@@ -243,20 +288,23 @@ class _NotifCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: item.unread ? AppColors.primaryTint : AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: item.unread ? AppColors.primary : AppColors.border,
-          width: 1.5,
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: item.unread ? AppColors.successTint : AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: item.unread ? AppColors.success : AppColors.border,
+            width: 1.5,
+          ),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Container(
             width: 40,
             height: 40,
@@ -302,7 +350,7 @@ class _NotifCard extends StatelessWidget {
                         width: 7,
                         height: 7,
                         decoration: const BoxDecoration(
-                          color: AppColors.primary,
+                          color: AppColors.success,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -323,7 +371,8 @@ class _NotifCard extends StatelessWidget {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -351,6 +400,80 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Long-press sheet — itself the confirmation step, so Delete acts
+/// immediately with no second dialog.
+class _DeleteNotifSheet extends StatelessWidget {
+  final String title;
+  const _DeleteNotifSheet({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(20, 14, 20, 20 + MediaQuery.of(context).padding.bottom),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: AppColors.surfaceStrong,
+                  borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 18),
+          Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Syne', fontSize: 15,
+                  fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          const SizedBox(height: 18),
+          _DeleteNotifRow(onTap: () => Navigator.pop(context, true)),
+          const SizedBox(height: 10),
+          SizedBox(width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(context, false),
+              style: OutlinedButton.styleFrom(foregroundColor: AppColors.textSecondary,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  side: const BorderSide(color: Color(0x1C14142A), width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+              child: const Text('Cancel', style: TextStyle(fontFamily: 'DM Sans',
+                  fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Styled like _PickerOption in auth_driver_screen.dart, but both the icon
+/// and label render in AppColors.primary since this row is a destructive
+/// action rather than a neutral navigation option.
+class _DeleteNotifRow extends StatelessWidget {
+  final VoidCallback onTap;
+  const _DeleteNotifRow({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x1C14142A), width: 1.5)),
+        child: Row(children: [
+          Container(width: 46, height: 46,
+            decoration: BoxDecoration(color: AppColors.primaryTint,
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+            child: const Icon(Icons.delete_outline, color: AppColors.primary, size: 22)),
+          const SizedBox(width: 13),
+          const Expanded(child: Text('Delete notification',
+              style: TextStyle(fontFamily: 'Syne', fontSize: 14,
+                  fontWeight: FontWeight.w700, color: AppColors.primary))),
+        ]),
       ),
     );
   }

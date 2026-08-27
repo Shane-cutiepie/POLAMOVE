@@ -97,12 +97,22 @@ of this repository.
 
 ## Known limitations
 
-- Driver documents are stored as device-local file paths rather than Cloud
-  Storage download URLs, as Cloud Storage requires a billing-enabled Firebase
-  plan. The paths resolve only on the device that submitted them.
+- Driver documents and profile photos are uploaded to Cloudinary (see
+  `lib/core/services/cloudinary_service.dart`) rather than Firebase Cloud
+  Storage, as Cloud Storage requires a billing-enabled Firebase plan.
+  Cloudinary URLs are hosted at unguessable but not access-controlled
+  addresses: anyone with a URL can view the file. This is a consequence of
+  using an unsigned upload preset — the app has no server component to sign
+  requests with, so there is no server-side hook to enforce access control
+  on read.
+- Replaced profile photos and documents are never deleted from Cloudinary,
+  for the same reason: removal would require a signed (server-side) API
+  call, which this app has no server to make. Old uploads accumulate in the
+  Cloudinary account indefinitely.
 - Driver positions are pinned to the Polangui service area behind the
   `kForcePolanguiLocation` flag in `lib/core/services/location_service.dart`.
-  Live GPS is implemented and is enabled by setting the flag to `false`.
+  The flag is currently `false`, so live GPS is active — appropriate since
+  evaluation takes place in Polangui.
 - SMS-based phone verification was not implemented, as it requires a
   billing-enabled plan. Identity is verified through admin review of submitted
   documents.
@@ -113,10 +123,15 @@ of this repository.
   field, including approval status.
 - Rating is not implemented; the field is a placeholder and is not calculated
   from completed rides.
+- The app displays research participation and permission disclosure screens
+  required by the project's BUERB (ethics review board) submission. Every
+  BUERB-specified string is centralised in
+  `lib/core/constants/research_notice.dart`, pending final BUERB approval of
+  the wording.
 
 ## Team
 
-- Ibet — lead developer
+- Shane Yvette C. Penaflor — lead developer
 - Jaiden Nykluz M. Fermante
 - Andrei Lloyd V. Sinfuego
 

@@ -21,13 +21,13 @@ class LocationService {
   /// so real coordinates make the app appear broken. The live GPS path below
   /// is fully implemented — set this to false to enable it for production
   /// deployment.
-  static const bool kForcePolanguiLocation = true;
+  static const bool kForcePolanguiLocation = false;
 
   /// Fallback used when a driver denies location permission: the town centre.
   /// Better than dropping them off the map entirely, and clearly marked in the
   /// document so the UI can treat it as approximate.
-  static const double _fallbackLat = 13.2924;
-  static const double _fallbackLng = 123.4866;
+  static const double _fallbackLat = 13.29284;
+  static const double _fallbackLng = 123.48414;
 
   /// Asks for permission and returns whether we can read a real position.
   static Future<bool> ensurePermission() async {
@@ -37,6 +37,15 @@ class LocationService {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
+    return permission == LocationPermission.always ||
+           permission == LocationPermission.whileInUse;
+  }
+
+  /// Reads the current permission status without prompting. Used to decide
+  /// whether a rationale needs to be shown before the system dialog —
+  /// showing one for a permission already granted would just be noise.
+  static Future<bool> hasPermission() async {
+    final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.always ||
            permission == LocationPermission.whileInUse;
   }
@@ -73,12 +82,14 @@ class LocationService {
       await _writeFallback(uid);
     }
 
-    // 25 m filter keeps Firestore writes reasonable — a tricycle crossing
-    // Polangui generates a handful of updates rather than hundreds.
+    // 10 m filter: a tricycle at ~20 km/h covers that in ~2 seconds, so the
+    // marker updates about twice as often as the old 25 m filter — enough to
+    // read as continuous once animated between points. That's more Firestore
+    // writes, but still well within the free tier at this project's scale.
     _sub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 25,
+        distanceFilter: 10,
       ),
     ).listen((pos) {
       _write(uid, pos.latitude, pos.longitude);

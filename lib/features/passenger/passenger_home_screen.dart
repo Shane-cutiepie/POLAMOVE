@@ -4,8 +4,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/polangui_locations.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/message_alert_service.dart';
 import '../../core/services/ride_service.dart';
+import '../../core/services/sound_service.dart';
+import '../shared/animated_map_marker.dart';
+import '../shared/location_picker_sheet.dart';
+import '../shared/research_disclosure_screen.dart';
 import 'booking_screen.dart';
 import 'passenger_history_screen.dart';
 import 'passenger_notifications_screen.dart';
@@ -22,9 +28,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   int _currentNav = 0;
   final MapController _mapController = MapController();
 
-  static const LatLng _polangui = LatLng(13.2924, 123.4866);
   static final Distance _distance = const Distance();
   static const double _nearbyRadiusMeters = 3000;
+
+  /// The passenger's chosen pickup point. Not a GPS position — this app does
+  /// not track passenger location. Defaults to the town centre.
+  String _pickupLocation = 'Polangui Municipal Hall';
 
   final _navItems = const [
     {'icon': '🏠', 'label': 'Home'},
@@ -32,6 +41,14 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     {'icon': '🔔', 'label': 'Notifs'},
     {'icon': '👤', 'label': 'Profile'},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    SoundService.loadPreference();
+    MessageAlertService.start();
+    ResearchDisclosureScreen.maybeShow(context);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,12 +61,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     );
   }
 
+  /// Back button target for the tab screens, which have no route to pop.
+  void _goHome() => setState(() => _currentNav = 0);
+
   Widget _buildBody() {
     switch (_currentNav) {
       case 0: return _buildHomePage();
-      case 1: return const PassengerHistoryScreen();
-      case 2: return const PassengerNotificationsScreen();
-      case 3: return const PassengerProfileScreen();
+      case 1: return PassengerHistoryScreen(onBack: _goHome);
+      case 2: return PassengerNotificationsScreen(onBack: _goHome);
+      case 3: return PassengerProfileScreen(onBack: _goHome);
       default: return _buildHomePage();
     }
   }
@@ -68,14 +88,20 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
-                initialCenter: _polangui, initialZoom: 15,
+                initialCenter: kPolanguiCentre, initialZoom: 15,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag),
               ),
               children: [
                 TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.polamove.app'),
-                MarkerLayer(markers: _buildDriverMarkers(docs)),
+                // Each driver marker animates independently (see
+                // AnimatedMapMarker), so they're placed directly as map
+                // children rather than inside one MarkerLayer's static list.
+                // Pickup marker last so it draws on top — the passenger's own
+                // pickup point must never be hidden behind a tricycle.
+                ..._buildDriverMarkers(docs),
+                MarkerLayer(markers: [_buildPickupMarker()]),
               ],
             ),
             // Nearby drivers chip
@@ -102,7 +128,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             // Recenter button
             Positioned(bottom: 10, right: 10,
               child: GestureDetector(
-                onTap: () => _mapController.move(_polangui, 15),
+                onTap: () => _mapController.move(locationFor(_pickupLocation), 15),
                 child: Container(width: 40, height: 40,
                   decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
                       border: Border.all(color: AppColors.border, width: 1.5),
@@ -130,8 +156,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 44),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Greeting spans the full width — the notification bell that
+              // used to sit on the right duplicated the Notifs tab's badge.
+              SizedBox(width: double.infinity,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                     stream: AuthService.userStream(
                         FirebaseAuth.instance.currentUser!.uid),
@@ -147,35 +175,26 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   const SizedBox(height: 2),
                   Text('Where to in Polangui today?',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.66))),
-                ])),
-                // Notification bell
-                GestureDetector(
-                  onTap: () => setState(() => _currentNav = 2),
-                  child: Stack(children: [
-                    Container(width: 37, height: 37,
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(11),
-                          border: Border.all(color: Colors.white.withOpacity(0.2))),
-                      child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 18)),
-                    const Positioned(top: 6, right: 6, child: _UnreadBadge()),
+                ]),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: _changePickup,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(50),
+                      border: Border.all(color: Colors.white.withOpacity(0.2))),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('📍', style: TextStyle(fontSize: 12)),
+                    const SizedBox(width: 5),
+                    Text(_pickupLocation, style: const TextStyle(fontSize: 12,
+                        color: Colors.white, fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 4),
+                    Icon(Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white.withOpacity(0.8), size: 14),
                   ]),
                 ),
-              ]),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.14),
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(color: Colors.white.withOpacity(0.2))),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('📍', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 5),
-                  const Text('Polangui Centro', style: TextStyle(fontSize: 12,
-                      color: Colors.white, fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 4),
-                  Icon(Icons.keyboard_arrow_down_rounded,
-                      color: Colors.white.withOpacity(0.8), size: 14),
-                ]),
               ),
             ]),
           ),
@@ -199,8 +218,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             decoration: BoxDecoration(color: AppColors.surfaceStrong,
                 borderRadius: BorderRadius.circular(3)))),
         GestureDetector(
-          onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BookingScreen())),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => BookingScreen(initialPickup: _pickupLocation))),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -246,13 +265,17 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             child: GestureDetector(
               onTap: () => setState(() => _currentNav = i),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                AnimatedContainer(duration: const Duration(milliseconds: 200),
-                  width: 38, height: 27,
-                  decoration: BoxDecoration(
-                    color: active ? AppColors.primaryTint : Colors.transparent,
-                    borderRadius: BorderRadius.circular(50)),
-                  child: Center(child: Text(_navItems[i]['icon']!,
-                      style: const TextStyle(fontSize: 17)))),
+                Stack(clipBehavior: Clip.none, children: [
+                  AnimatedContainer(duration: const Duration(milliseconds: 200),
+                    width: 38, height: 27,
+                    decoration: BoxDecoration(
+                      color: active ? AppColors.primaryTint : Colors.transparent,
+                      borderRadius: BorderRadius.circular(50)),
+                    child: Center(child: Text(_navItems[i]['icon']!,
+                        style: const TextStyle(fontSize: 17)))),
+                  if (_navItems[i]['label'] == 'Notifs')
+                    const Positioned(top: -2, right: 0, child: _UnreadBadge()),
+                ]),
                 const SizedBox(height: 2),
                 Text(_navItems[i]['label']!, style: TextStyle(fontSize: 9,
                     fontWeight: FontWeight.w700,
@@ -267,16 +290,22 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   }
 
   // ── Driver markers ────────────────────────────────
-  List<Marker> _buildDriverMarkers(
+  /// Keyed by the driver's uid (the document id from `onlineDrivers()`) so
+  /// each driver keeps its own AnimatedMapMarker state — without a key,
+  /// Flutter would match markers by list position, and a reorder (a driver
+  /// going offline, a new one appearing) would hand one driver's in-flight
+  /// animation to another.
+  List<Widget> _buildDriverMarkers(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final markers = <Marker>[];
+    final markers = <Widget>[];
     for (final d in docs) {
       final loc = d.data()['location'];
       if (loc is! GeoPoint) continue;
-      markers.add(Marker(
-        point: LatLng(loc.latitude, loc.longitude),
+      markers.add(AnimatedMapMarker(
+        key: ValueKey(d.id),
+        target: LatLng(loc.latitude, loc.longitude),
         width: 32, height: 32,
-        child: Container(
+        builder: (context, pos) => Container(
           decoration: BoxDecoration(
             color: AppColors.primary, shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 2),
@@ -288,23 +317,52 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     return markers;
   }
 
-  /// Drivers further out than this are online but not usefully "nearby",
-  /// so they aren't advertised on the home screen.
+  /// The passenger's selected pickup point — a named place, never a device
+  /// position. Green against the drivers' red 🛺 pins so "where I'm picked up"
+  /// reads apart from "a tricycle" at a glance.
+  Marker _buildPickupMarker() {
+    return Marker(
+      point: locationFor(_pickupLocation),
+      width: 36, height: 36,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.success, shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2.5),
+          boxShadow: [BoxShadow(color: AppColors.success.withOpacity(0.4),
+              blurRadius: 10)]),
+        child: const Center(child: Text('📍', style: TextStyle(fontSize: 16)))),
+    );
+  }
+
+  /// Opens the shared picker and recentres on the chosen place. No permission
+  /// prompt and no GPS — the passenger picks from the named Polangui locations.
+  Future<void> _changePickup() async {
+    final result = await showLocationPicker(context, 'Set Pickup Location');
+    if (result == null || !mounted) return;
+    setState(() => _pickupLocation = result);
+    _mapController.move(locationFor(result), 15);
+  }
+
+  /// Drivers further out than this from the chosen pickup are online but not
+  /// usefully "nearby", so they aren't advertised on the home screen. Measured
+  /// from the pickup point, not the town centre — a passenger picked up on
+  /// the other side of town cares about drivers near them, not near centro.
   int _nearbyCount(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final origin = locationFor(_pickupLocation);
     var count = 0;
     for (final d in docs) {
       final loc = d.data()['location'];
       if (loc is! GeoPoint) continue;
       final metres = _distance.as(LengthUnit.Meter,
-          _polangui, LatLng(loc.latitude, loc.longitude));
+          origin, LatLng(loc.latitude, loc.longitude));
       if (metres <= _nearbyRadiusMeters) count++;
     }
     return count;
   }
 }
 
-/// Live unread notification count for the top-bar bell. Keeps the original
-/// dot's position, colours and border — it only grows enough to fit a digit.
+/// Live unread notification count, shown on the bottom-nav Notifs tab. Grows
+/// only enough to fit a digit.
 class _UnreadBadge extends StatelessWidget {
   const _UnreadBadge();
 

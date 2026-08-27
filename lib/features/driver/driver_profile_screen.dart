@@ -4,31 +4,33 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/auth_service.dart';
 import '../role_selection/role_selection_screen.dart';
+import '../shared/about_screen.dart';
+import '../shared/avatar_picker_sheet.dart';
 import '../shared/change_password_screen.dart';
 import '../shared/edit_profile_screen.dart';
+import '../shared/help_support_screen.dart';
 import '../shared/notification_settings_screen.dart';
+import '../shared/red_header.dart';
+import '../shared/user_avatar.dart';
+import 'edit_vehicle_info_screen.dart';
 
 class DriverProfileScreen extends StatelessWidget {
-  const DriverProfileScreen({super.key});
+  /// Returns the bottom-nav shell to the Home tab. This screen is a tab, not
+  /// a pushed route, so there is nothing for `Navigator.pop` to pop.
+  final VoidCallback? onBack;
+
+  const DriverProfileScreen({super.key, this.onBack});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            fontFamily: 'Syne',
-            fontWeight: FontWeight.w800,
-            fontSize: 20,
-            color: AppColors.textPrimary,
-          ),
-        ),
+    return Column(children: [
+      RedHeader(
+        title: 'Profile',
+        subtitle: 'Your account and vehicle details',
+        onBack: onBack,
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      Expanded(
+        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: AuthService.driverStream(FirebaseAuth.instance.currentUser!.uid),
         builder: (context, driverSnap) {
           if (driverSnap.hasError) {
@@ -57,11 +59,12 @@ class DriverProfileScreen extends StatelessWidget {
                     phone: user['phone'] ?? '—',
                     barangay: user['barangay'] ?? '—',
                     isApproved: driver['status'] == 'approved',
+                    avatarIndex: (user['avatarIndex'] ?? 0) as int,
+                    avatarUrl: user['avatarUrl'] as String?,
                   ),
                   const SizedBox(height: 16),
                   _StatsRow(
                     totalRides: driver['totalRides'] ?? 0,
-                    rating: (driver['rating'] ?? 0).toDouble(),
                     earnings: (driver['totalEarnings'] ?? 0).toDouble(),
                   ),
                   const SizedBox(height: 24),
@@ -72,9 +75,9 @@ class DriverProfileScreen extends StatelessWidget {
                       _InfoRow(label: 'Plate No.', value: driver['plateNo'] ?? '—'),
                       _InfoRow(label: 'License No.', value: driver['licenseNo'] ?? '—'),
                       _InfoRow(label: 'License Expiry', value: driver['licenseExpiry'] ?? '—'),
-                      _InfoRow(label: 'Preferred Route', value: driver['preferredRoute'] ?? '—'),
                     ],
-                    onEdit: () => _showSoon(context, 'Editing vehicle info'),
+                    onEdit: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const EditVehicleInfoScreen())),
                   ),
                   const SizedBox(height: 24),
                   const _SectionLabel('Documents'),
@@ -127,12 +130,14 @@ class DriverProfileScreen extends StatelessWidget {
                       _MenuItem(
                         icon: Icons.help_outline,
                         label: 'Help & Support',
-                        onTap: () => _showSoon(context, 'Help & support'),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const HelpSupportScreen())),
                       ),
                       _MenuItem(
                         icon: Icons.info_outline,
                         label: 'About PolaMove',
-                        onTap: () => _showSoon(context, 'About PolaMove'),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const AboutScreen())),
                       ),
                     ],
                   ),
@@ -155,8 +160,9 @@ class DriverProfileScreen extends StatelessWidget {
             },
           );
         },
+        ),
       ),
-    );
+    ]);
   }
 
   static void _showSoon(BuildContext context, String action) {
@@ -241,6 +247,8 @@ class _ProfileHeader extends StatelessWidget {
   final String phone;
   final String barangay;
   final bool isApproved;
+  final int avatarIndex;
+  final String? avatarUrl;
 
   const _ProfileHeader({
     required this.firstName,
@@ -248,6 +256,8 @@ class _ProfileHeader extends StatelessWidget {
     required this.phone,
     required this.barangay,
     required this.isApproved,
+    required this.avatarIndex,
+    required this.avatarUrl,
   });
 
   @override
@@ -261,22 +271,20 @@ class _ProfileHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.primaryTint,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Center(
-              child: Text(
-                '${firstName.isNotEmpty ? firstName[0] : '?'}${lastName.isNotEmpty ? lastName[0] : ''}',
-                style: const TextStyle(
-                  fontFamily: 'Syne',
-                  fontWeight: FontWeight.w800,
-                  fontSize: 22,
-                  color: AppColors.primary,
-                ),
+          GestureDetector(
+            onTap: () => showAvatarPickerSheet(context, avatarIndex),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.primaryTint,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: UserAvatar(
+                avatarUrl: avatarUrl,
+                avatarIndex: avatarIndex,
+                size: 64,
+                emojiSize: 28,
               ),
             ),
           ),
@@ -320,12 +328,10 @@ class _ProfileHeader extends StatelessWidget {
 
 class _StatsRow extends StatelessWidget {
   final int totalRides;
-  final double rating;
   final double earnings;
 
   const _StatsRow({
     required this.totalRides,
-    required this.rating,
     required this.earnings,
   });
 
@@ -334,9 +340,6 @@ class _StatsRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(child: _StatTile(value: '$totalRides', label: 'Total Rides')),
-        const SizedBox(width: 12),
-        Expanded(child: _StatTile(
-            value: rating > 0 ? rating.toStringAsFixed(1) : '—', label: 'Rating')),
         const SizedBox(width: 12),
         Expanded(child: _StatTile(
             value: '₱${earnings.toStringAsFixed(0)}', label: 'Earnings')),

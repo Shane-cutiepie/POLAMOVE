@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/polangui_barangays.dart';
 import '../../core/utils/validators.dart';
+import 'form_fields.dart';
 
 /// Edits the name, email and (for drivers) barangay on `users/{uid}`.
 ///
@@ -173,21 +174,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
               children: [
-                _FormField(
+                AppFormField(
                   label: 'First Name',
                   placeholder: 'Juan',
                   controller: _firstCtrl,
                   errorText: _errors['firstName'],
                 ),
                 const SizedBox(height: 14),
-                _FormField(
+                AppFormField(
                   label: 'Last Name',
                   placeholder: 'Dela Cruz',
                   controller: _lastCtrl,
                   errorText: _errors['lastName'],
                 ),
                 const SizedBox(height: 14),
-                _FormField(
+                AppFormField(
                   label: 'Email',
                   placeholder: 'juan@example.com',
                   controller: _emailCtrl,
@@ -196,7 +197,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 if (widget.isDriver) ...[
                   const SizedBox(height: 14),
-                  _DropdownField<String>(
+                  AppDropdownField<String>(
                     label: 'Barangay',
                     placeholder: 'Select barangay…',
                     value: _selectedBarangay,
@@ -238,89 +239,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ],
             ),
     );
-  }
-}
-
-class _FormField extends StatelessWidget {
-  final String label;
-  final String placeholder;
-  final TextEditingController controller;
-  final TextInputType? keyboardType;
-  final String? errorText;
-
-  const _FormField({
-    required this.label,
-    required this.placeholder,
-    required this.controller,
-    this.keyboardType,
-    this.errorText,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 11,
-          fontWeight: FontWeight.w700, color: AppColors.textSecondary,
-          letterSpacing: 0.7)),
-      const SizedBox(height: 5),
-      TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        style: const TextStyle(fontFamily: 'DM Sans', fontSize: 14,
-            fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: placeholder, errorText: errorText),
-      ),
-    ]);
-  }
-}
-
-class _DropdownField<T> extends StatelessWidget {
-  final String label;
-  final String placeholder;
-  final T? value;
-  final List<T> items;
-  final String Function(T) itemLabel;
-  final void Function(T?) onChanged;
-  final String? errorText;
-
-  const _DropdownField({
-    required this.label,
-    required this.placeholder,
-    required this.value,
-    required this.items,
-    required this.itemLabel,
-    required this.onChanged,
-    this.errorText,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 11,
-          fontWeight: FontWeight.w700, color: AppColors.textSecondary,
-          letterSpacing: 0.7)),
-      const SizedBox(height: 5),
-      DropdownButtonFormField<T>(
-        value: value,
-        hint: Text(placeholder, style: const TextStyle(fontFamily: 'DM Sans',
-            fontSize: 14, color: AppColors.textTertiary)),
-        items: items.map((e) => DropdownMenuItem(value: e,
-            child: Text(itemLabel(e), style: const TextStyle(fontFamily: 'DM Sans',
-                fontSize: 14, fontWeight: FontWeight.w500,
-                color: AppColors.textPrimary)))).toList(),
-        onChanged: onChanged,
-        decoration: InputDecoration(filled: true, fillColor: AppColors.surfaceAlt,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          errorText: errorText,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0x1C14142A), width: 1.5)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0x1C14142A), width: 1.5)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5))),
-        dropdownColor: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(12)),
-    ]);
   }
 }
 

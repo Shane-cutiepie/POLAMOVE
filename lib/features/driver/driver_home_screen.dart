@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/polangui_locations.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/message_alert_service.dart';
 import '../../core/services/ride_service.dart';
+import '../../core/services/sound_service.dart';
+import '../shared/location_rationale_sheet.dart';
+import '../shared/research_disclosure_screen.dart';
 import 'driver_tracking_screen.dart';
 import 'driver_history_screen.dart';
 import 'driver_notifications_screen.dart';
@@ -35,11 +39,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   late Animation<double> _pulseAnim;
 
   final MapController _mapController = MapController();
-  static const LatLng _polangui = LatLng(13.2924, 123.4866);
 
-  // Mock earnings
-  double _todayEarnings = 0;
-  int _todayTrips = 0;
+  // All-time totals, mirrored from the drivers/{uid} document.
+  double _totalEarnings = 0;
+  int _totalRides = 0;
 
   // Live incoming request
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _requestSub;
@@ -70,6 +73,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     _watchDriverStatus();
     _loadFirstName();
+    SoundService.loadPreference();
+    MessageAlertService.start();
+    ResearchDisclosureScreen.maybeShow(context);
   }
 
   /// Live rather than a one-off read, so an admin approving the account flips
@@ -85,6 +91,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         setState(() {
           _driverStatus = data?['status'] ?? 'pending';
           _isOnline = data?['isOnline'] ?? false;
+          // completeRide() increments both, so the top bar updates itself
+          // the moment a trip finishes.
+          _totalEarnings = (data?['totalEarnings'] ?? 0).toDouble();
+          _totalRides = (data?['totalRides'] ?? 0).toInt();
           _statusLoaded = true;
         });
         // Keep the booking feed in step with what the database says.
@@ -113,8 +123,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   void _subscribeToRequests() {
     if (_requestSub != null) return;
+    // A freshly-attached listener fires immediately with every ride already
+    // searching. That first delivery must stay silent — only requests that
+    // arrive after this driver is already watching should chime. Scoped to
+    // this subscription (not an instance field) so going offline and back
+    // online starts a fresh "first snapshot" each time.
+    var isFirstSnapshot = true;
     _requestSub = RideService.searchingRides().listen(
       (snap) async {
+        final playSound = !isFirstSnapshot;
+        isFirstSnapshot = false;
+
         if (!mounted) return;
 
         // The ride currently on screen vanished — another driver accepted
@@ -148,6 +167,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         setState(() => _hasRequest = true);
         _requestController.forward();
+
+        if (playSound &&
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+          SoundService.rideAlert();
+        }
       },
       onError: (_) {},
     );
@@ -206,6 +230,36 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
 
     final next = !_isOnline;
+
+    if (next) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final cooldown = uid == null ? null : await RideService.activeCooldown(uid);
+      if (cooldown != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.',
+              style: const TextStyle(fontFamily: 'DM Sans'),
+            ),
+            backgroundColor: AppColors.primaryDark,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ));
+        }
+        return;
+      }
+
+      // A rationale for a permission already granted would just be noise —
+      // only show it ahead of the system dialog the first time.
+      if (!await LocationService.hasPermission()) {
+        if (!mounted) return;
+        final proceed = await showLocationRationaleSheet(context);
+        // Dismissed without tapping Continue: stay offline, and don't touch
+        // the system permission dialog at all.
+        if (!proceed) return;
+      }
+    }
+
     setState(() => _isOnline = next);
 
     try {
@@ -298,6 +352,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  /// Back button target for the tab screens, which have no route to pop.
+  void _goHome() => setState(() => _currentNav = 0);
+
   // IndexedStack keeps every tab alive — the OSM tiles and map position on the
   // Home tab survive tab switches instead of reloading each time.
   Widget _buildBody() {
@@ -305,9 +362,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       index: _currentNav,
       children: [
         _buildHomePage(),
-        const DriverHistoryScreen(),
-        const DriverNotificationsScreen(),
-        const DriverProfileScreen(),
+        DriverHistoryScreen(onBack: _goHome),
+        DriverNotificationsScreen(onBack: _goHome),
+        DriverProfileScreen(onBack: _goHome),
       ],
     );
   }
@@ -320,7 +377,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
-            initialCenter: _polangui, initialZoom: 15,
+            initialCenter: kPolanguiCentre, initialZoom: 15,
             interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag)),
           children: [
@@ -328,7 +385,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 userAgentPackageName: 'com.polamove.app'),
             MarkerLayer(markers: [
               // Driver's own location
-              Marker(point: _polangui, width: 44, height: 44,
+              Marker(point: kPolanguiCentre, width: 44, height: 44,
                 child: ScaleTransition(
                   scale: _pulseAnim,
                   child: Container(
@@ -371,7 +428,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // Recenter button
         Positioned(top: 10, right: 10,
           child: GestureDetector(
-            onTap: () => _mapController.move(_polangui, 15),
+            onTap: () => _mapController.move(kPolanguiCentre, 15),
             child: Container(width: 40, height: 40,
               decoration: BoxDecoration(color: AppColors.surface,
                   shape: BoxShape.circle,
@@ -411,7 +468,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
             child: Column(children: [
-              // Name row
+              // Name row. The notification bell that used to sit on the right
+              // duplicated the Notifs tab's badge, so it was removed.
               Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(_firstName.isEmpty ? 'Hi! 🛺' : 'Hi, $_firstName! 🛺',
@@ -421,19 +479,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   Text('Polangui Tricycle Driver',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.66))),
                 ])),
-                // Notif bell
-                Stack(children: [
-                  GestureDetector(
-                    onTap: () => setState(() => _currentNav = 2),
-                    child: Container(width: 37, height: 37,
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(11),
-                          border: Border.all(color: Colors.white.withOpacity(0.2))),
-                      child: const Icon(Icons.notifications_outlined,
-                          color: Colors.white, size: 18)),
-                  ),
-                  const Positioned(top: 6, right: 6, child: _UnreadBadge()),
-                ]),
               ]),
               const SizedBox(height: 10),
               // Online/Offline toggle + Earnings row
@@ -488,7 +533,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   ),
                   child: Row(children: [
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('₱${_todayEarnings.toStringAsFixed(0)}',
+                      Text('₱${_totalEarnings.toStringAsFixed(0)}',
                           style: const TextStyle(fontFamily: 'Syne', fontSize: 16,
                               fontWeight: FontWeight.w800, color: Colors.white)),
                       Text('Earnings', style: TextStyle(fontSize: 9,
@@ -498,7 +543,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         margin: const EdgeInsets.symmetric(horizontal: 10),
                         color: Colors.white.withOpacity(0.2)),
                     Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text('$_todayTrips', style: const TextStyle(fontFamily: 'Syne',
+                      Text('$_totalRides', style: const TextStyle(fontFamily: 'Syne',
                           fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
                       Text('Trips', style: TextStyle(fontSize: 9,
                           color: Colors.white.withOpacity(0.66), fontWeight: FontWeight.w600)),
@@ -671,13 +716,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: GestureDetector(
               onTap: () => setState(() => _currentNav = i),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                AnimatedContainer(duration: const Duration(milliseconds: 200),
-                  width: 38, height: 27,
-                  decoration: BoxDecoration(
-                      color: active ? AppColors.primaryTint : Colors.transparent,
-                      borderRadius: BorderRadius.circular(50)),
-                  child: Center(child: Text(items[i]['icon']!,
-                      style: const TextStyle(fontSize: 17)))),
+                Stack(clipBehavior: Clip.none, children: [
+                  AnimatedContainer(duration: const Duration(milliseconds: 200),
+                    width: 38, height: 27,
+                    decoration: BoxDecoration(
+                        color: active ? AppColors.primaryTint : Colors.transparent,
+                        borderRadius: BorderRadius.circular(50)),
+                    child: Center(child: Text(items[i]['icon']!,
+                        style: const TextStyle(fontSize: 17)))),
+                  if (items[i]['label'] == 'Notifs')
+                    const Positioned(top: -2, right: 0, child: _UnreadBadge()),
+                ]),
                 const SizedBox(height: 2),
                 Text(items[i]['label']!, style: TextStyle(fontSize: 9,
                     fontWeight: FontWeight.w700,
@@ -692,8 +741,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 }
 
-/// Live unread notification count for the top-bar bell. Keeps the original
-/// dot's position, colours and border — it only grows enough to fit a digit.
+String _formatCooldownTime(DateTime d) {
+  final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final period = d.hour >= 12 ? 'PM' : 'AM';
+  return '$hour12:${d.minute.toString().padLeft(2, '0')} $period';
+}
+
+/// Live unread notification count, shown on the bottom-nav Notifs tab. Grows
+/// only enough to fit a digit.
 class _UnreadBadge extends StatelessWidget {
   const _UnreadBadge();
 

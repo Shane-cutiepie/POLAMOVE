@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../constants/cancel_reasons.dart';
 
 /// Thrown for anything the user should see a readable message about.
 class RideException implements Exception {
@@ -27,33 +28,36 @@ class RideService {
   /// Turns a Firestore error into something that points at the real cause.
   /// A blanket "check your connection" message hides permission problems and
   /// sends you debugging the wrong thing.
-  static RideException _mapError(Object e, String action) {
+  ///
+  /// Shared with ChatService so both data layers report Firestore errors the
+  /// same way — callers wrap the message in their own exception type.
+  static String mapErrorMessage(Object e, String action) {
     assert(() {
       // ignore: avoid_print
-      print('RideService error during "$action": $e');
+      print('Firestore error during "$action": $e');
       return true;
     }());
 
     if (e is FirebaseException) {
       switch (e.code) {
         case 'permission-denied':
-          return RideException(
-              'You don\'t have permission to $action. Please contact the administrator.');
+          return 'You don\'t have permission to $action. Please contact the administrator.';
         case 'unavailable':
         case 'deadline-exceeded':
-          return RideException(
-              'No internet connection. Please check your network and try again.');
+          return 'No internet connection. Please check your network and try again.';
         case 'not-found':
-          return RideException('This ride no longer exists.');
+          return 'This ride no longer exists.';
         case 'failed-precondition':
-          return RideException(
-              'The database is still preparing. Please try again in a moment.');
+          return 'The database is still preparing. Please try again in a moment.';
         default:
-          return RideException('Could not $action. Please try again.');
+          return 'Could not $action. Please try again.';
       }
     }
-    return RideException('Could not $action. Please try again.');
+    return 'Could not $action. Please try again.';
   }
+
+  static RideException _mapError(Object e, String action) =>
+      RideException(mapErrorMessage(e, action));
 
   /// Best-effort in-app notification. A failed notification must never break
   /// the ride action that triggered it.
@@ -73,6 +77,17 @@ class RideService {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (_) {}
+  }
+
+  /// A real delete, not a soft-delete flag — each notification belongs to
+  /// exactly one user via `userId`, so removing one never touches anyone
+  /// else's inbox.
+  static Future<void> deleteNotification(String notifId) async {
+    try {
+      await _db.collection('notifications').doc(notifId).delete();
+    } catch (e) {
+      throw _mapError(e, 'delete this notification');
+    }
   }
 
   /// Reads a ride for the notification step only — never lets a failed read
@@ -116,6 +131,14 @@ class RideService {
     final uid = _auth.currentUser?.uid;
     if (uid == null) {
       throw RideException('You need to be logged in to book a ride.');
+    }
+
+    // Checked here too (not just in the UI) so a client that skips the
+    // pre-check can't slip a booking through while paused.
+    final cooldown = await activeCooldown(uid);
+    if (cooldown != null) {
+      throw RideException(
+          'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.');
     }
 
     try {
@@ -165,6 +188,12 @@ class RideService {
     final uid = _auth.currentUser?.uid;
     if (uid == null) {
       throw RideException('You need to be logged in to accept a ride.');
+    }
+
+    final cooldown = await activeCooldown(uid);
+    if (cooldown != null) {
+      throw RideException(
+          'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.');
     }
 
     String? passengerId;
@@ -293,29 +322,223 @@ class RideService {
     }
   }
 
-  static Future<void> cancelRide(String rideId) async {
-    await _advance(rideId, 'cancelled', 'cancelledAt');
+  /// Passengers may cancel any time before completion; a ₱20 late fee applies
+  /// once the driver has already reached the pickup point (arrived/ongoing).
+  /// Drivers may cancel from accepted/arrived/ongoing and are never charged.
+  ///
+  /// Runs as a transaction so a double-tap can't cancel twice or write two
+  /// fees: the second attempt re-reads the ride, sees status already
+  /// 'cancelled', and throws before writing anything.
+  static Future<void> cancelRide(
+    String rideId, {
+    required String reason,
+    String? reasonText,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      throw RideException('You need to be logged in to cancel a ride.');
+    }
 
-    final data = await _rideData(rideId);
-    final driverId = data?['driverId'] as String?;
-    final passengerId = data?['passengerId'] as String?;
+    final trimmedReasonText = reasonText?.trim();
+    if (reason == 'other' && (trimmedReasonText == null || trimmedReasonText.isEmpty)) {
+      throw RideException('Please describe your reason for cancelling.');
+    }
+    final cappedReasonText = trimmedReasonText == null
+        ? null
+        : (trimmedReasonText.length > 200
+            ? trimmedReasonText.substring(0, 200)
+            : trimmedReasonText);
 
-    // Nobody has been matched yet — there is no other party to tell.
-    if (driverId == null) return;
+    String? passengerId;
+    String? driverId;
+    String? role;
+    num fee = 0;
 
-    final me = _auth.currentUser?.uid;
-    final cancelledByPassenger = me == passengerId;
-    final recipient = cancelledByPassenger ? driverId : passengerId;
-    if (recipient == null || recipient == me) return;
+    try {
+      await _db.runTransaction((tx) async {
+        final rideRef = _rides.doc(rideId);
+        final userRef = _db.collection('users').doc(uid);
 
-    await _notify(
-      userId: recipient,
-      title: 'Ride cancelled',
-      message: cancelledByPassenger
-          ? 'The passenger cancelled this ride.'
-          : 'Your driver cancelled this ride. You can book another tricycle.',
-      category: 'ride',
+        // All reads before any write — Firestore transactions require it.
+        final rideSnap = await tx.get(rideRef);
+        final userSnap = await tx.get(userRef);
+
+        if (!rideSnap.exists) {
+          throw RideException('This ride no longer exists.');
+        }
+        final ride = rideSnap.data() ?? {};
+        final status = ride['status'] as String?;
+        if (status == 'completed' || status == 'cancelled') {
+          throw RideException('This ride has already ended.');
+        }
+
+        passengerId = ride['passengerId'] as String?;
+        driverId = ride['driverId'] as String?;
+
+        if (uid == passengerId) {
+          role = 'passenger';
+        } else if (uid == driverId) {
+          role = 'driver';
+        } else {
+          throw RideException('You are not part of this ride.');
+        }
+
+        fee = (role == 'passenger' && (status == 'arrived' || status == 'ongoing'))
+            ? 20
+            : 0;
+
+        tx.update(rideRef, {
+          'status': 'cancelled',
+          'cancelledAt': FieldValue.serverTimestamp(),
+          'cancelledBy': uid,
+          'cancelledByRole': role,
+          'cancellationFee': fee,
+          'cancelReason': reason,
+          'cancelReasonText': reason == 'other' ? cappedReasonText : null,
+        });
+
+        // Rate limiting (Part 6) — recorded on the canceller's own user doc,
+        // read and written inside this same transaction.
+        final now = Timestamp.now();
+        final oneHourAgo =
+            Timestamp.fromDate(now.toDate().subtract(const Duration(hours: 1)));
+        final history = ((userSnap.data()?['recentCancellations'] as List?) ?? [])
+            .whereType<Timestamp>()
+            .toList()
+          ..add(now)
+          ..sort();
+        final trimmedHistory =
+            history.length > 10 ? history.sublist(history.length - 10) : history;
+        final withinHour =
+            trimmedHistory.where((t) => t.compareTo(oneHourAgo) >= 0).length;
+
+        final userUpdate = <String, dynamic>{'recentCancellations': trimmedHistory};
+        // Five in a rolling hour triggers a 1-hour cooldown from now. The
+        // original ask was "banned for the next 3 trips", which can't work —
+        // a blocked user takes no trips, so nothing would ever count down.
+        // A time-based cooldown is the fix.
+        if (withinHour >= 5) {
+          userUpdate['cooldownUntil'] =
+              Timestamp.fromDate(now.toDate().add(const Duration(hours: 1)));
+        }
+        tx.set(userRef, userUpdate, SetOptions(merge: true));
+      });
+    } on RideException {
+      rethrow;
+    } catch (e) {
+      throw _mapError(e, 'cancel this ride');
+    }
+
+    await _notifyCancellation(
+      passengerId: passengerId,
+      driverId: driverId,
+      cancelledByRole: role,
+      cancellerId: uid,
+      fee: fee,
+      reason: reason,
+      reasonText: cappedReasonText,
     );
+  }
+
+  /// Both parties learn who cancelled and why — never a stored copy of the
+  /// name, always a fresh read of users/{uid}. Skipped entirely when the ride
+  /// was still `searching`, since there's no driver yet to tell.
+  static Future<void> _notifyCancellation({
+    required String? passengerId,
+    required String? driverId,
+    required String? cancelledByRole,
+    required String cancellerId,
+    required num fee,
+    required String reason,
+    required String? reasonText,
+  }) async {
+    if (driverId == null || passengerId == null || cancelledByRole == null) {
+      return;
+    }
+
+    try {
+      final canceller = await userInfo(cancellerId);
+      final name =
+          '${canceller?['firstName'] ?? ''} ${canceller?['lastName'] ?? ''}'.trim();
+      final displayName = name.isEmpty ? 'The other party' : name;
+
+      final rawLabel = cancelReasonLabel(
+          cancelledByRole: cancelledByRole, reason: reason, reasonText: reasonText);
+      final reasonLabel = rawLabel.length > 60 ? rawLabel.substring(0, 60) : rawLabel;
+
+      if (cancelledByRole == 'driver') {
+        await _notify(
+          userId: passengerId,
+          title: 'Ride cancelled by your driver',
+          message: '$displayName cancelled the trip. Reason: $reasonLabel.',
+          category: 'ride',
+        );
+        return;
+      }
+
+      // Passenger cancelled.
+      if (fee > 0) {
+        await _notify(
+          userId: driverId,
+          title: 'Late cancellation — ₱20 fee',
+          message:
+              '$displayName cancelled after you arrived. Please collect the ₱20 late cancellation fee in cash.',
+          category: 'earnings',
+        );
+        await _notify(
+          userId: passengerId,
+          title: 'Late cancellation fee',
+          message:
+              'A ₱20 fee applies because your driver had already arrived. Please pay your driver in cash.',
+          category: 'ride',
+        );
+      } else {
+        await _notify(
+          userId: driverId,
+          title: 'Ride cancelled by passenger',
+          message: '$displayName cancelled the trip. Reason: $reasonLabel.',
+          category: 'ride',
+        );
+      }
+    } catch (_) {
+      // A failed notification must never fail the cancellation, which has
+      // already committed by the time this runs.
+    }
+  }
+
+  // ── Rate limiting ──────────────────────────────────
+  /// A cooldown that has expired is treated as absent — compared against
+  /// DateTime.now() at read time rather than cleaned up by a background job.
+  static Future<DateTime?> activeCooldown(String uid) async {
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      final ts = doc.data()?['cooldownUntil'];
+      if (ts is! Timestamp) return null;
+      final until = ts.toDate();
+      return until.isAfter(DateTime.now()) ? until : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Cancellations by [uid] within the last hour, from the stored history —
+  /// used right after a cancellation completes to decide whether to show the
+  /// 3-in-an-hour warning dialog.
+  static Future<int> recentCancellationCount(String uid) async {
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      final cutoff = Timestamp.fromDate(DateTime.now().subtract(const Duration(hours: 1)));
+      final entries = (doc.data()?['recentCancellations'] as List?) ?? [];
+      return entries.whereType<Timestamp>().where((t) => t.compareTo(cutoff) >= 0).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static String _formatCooldownTime(DateTime d) {
+    final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    final period = d.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12:${d.minute.toString().padLeft(2, '0')} $period';
   }
 
   static Future<void> _advance(

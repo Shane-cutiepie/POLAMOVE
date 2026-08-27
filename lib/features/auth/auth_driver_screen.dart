@@ -4,9 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/polangui_barangays.dart';
+import '../../core/constants/research_notice.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/utils/validators.dart';
 import '../driver/driver_home_screen.dart';
+import '../shared/form_fields.dart';
+import '../shared/privacy_screen.dart';
 
 class AuthDriverScreen extends StatefulWidget {
   const AuthDriverScreen({super.key});
@@ -19,7 +22,12 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
   bool _isSignUp = true;
   int _step = 1;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _isSubmitting = false;
+  // 'uploading' while the three document uploads are in flight, 'creating'
+  // once they're done and the Firestore writes are running. Null when not
+  // submitting.
+  String? _submitPhase;
   final Map<String, String?> _errors = {};
 
   // Step 1
@@ -29,13 +37,13 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
   final _phCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
+  final _confirmPwCtrl = TextEditingController();
   String? _selectedBarangay;
 
   // Step 2
   final _plateCtrl = TextEditingController();
   final _licCtrl = TextEditingController();
   final _licExpCtrl = TextEditingController();
-  String? _selectedRoute;
 
   // Step 3
   File? _licensePhoto;
@@ -49,15 +57,11 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
 
   final ImagePicker _picker = ImagePicker();
 
-  final List<String> _routes = [
-    'Centro – Public Market', 'Centro – Bus Terminal',
-    'Centro – Bicol University', 'Centro – Hospital', 'All Routes',
-  ];
-
   @override
   void dispose() {
     _fnCtrl.dispose(); _lnCtrl.dispose(); _dobCtrl.dispose();
-    _phCtrl.dispose(); _emailCtrl.dispose(); _pwCtrl.dispose(); _plateCtrl.dispose();
+    _phCtrl.dispose(); _emailCtrl.dispose(); _pwCtrl.dispose(); _confirmPwCtrl.dispose();
+    _plateCtrl.dispose();
     _licCtrl.dispose(); _licExpCtrl.dispose();
     _liPhCtrl.dispose(); _liPwCtrl.dispose();
     super.dispose();
@@ -72,8 +76,14 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       _errors['email'] = Validators.email(_emailCtrl.text);
       _errors['barangay'] = Validators.dropdown(_selectedBarangay, 'barangay');
       _errors['password'] = Validators.password(_pwCtrl.text);
+      _errors['confirmPassword'] = _confirmPwCtrl.text.isEmpty
+          ? 'Please confirm your password'
+          : (_confirmPwCtrl.text != _pwCtrl.text
+              ? 'Passwords do not match'
+              : null);
     });
-    return ['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'barangay', 'password']
+    return ['firstName', 'lastName', 'dateOfBirth', 'phone', 'email', 'barangay',
+            'password', 'confirmPassword']
         .every((key) => _errors[key] == null);
   }
 
@@ -82,9 +92,8 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       _errors['plateNo'] = Validators.plateNumber(_plateCtrl.text);
       _errors['licenseNo'] = Validators.licenseNumber(_licCtrl.text);
       _errors['licenseExpiry'] = Validators.date(_licExpCtrl.text, 'License expiry date');
-      _errors['preferredRoute'] = Validators.dropdown(_selectedRoute, 'route');
     });
-    return ['plateNo', 'licenseNo', 'licenseExpiry', 'preferredRoute']
+    return ['plateNo', 'licenseNo', 'licenseExpiry']
         .every((key) => _errors[key] == null);
   }
 
@@ -102,7 +111,10 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
 
   Future<void> _submitApplication() async {
     if (!_validateStep3()) return;
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _submitPhase = 'uploading';
+    });
     try {
       await AuthService.signUpDriver(
         firstName: _fnCtrl.text,
@@ -115,10 +127,12 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
         plateNo: _plateCtrl.text,
         licenseNo: _licCtrl.text,
         licenseExpiry: _licExpCtrl.text,
-        preferredRoute: _selectedRoute!,
         licensePhoto: _licensePhoto!,
         orcrPhoto: _orcrPhoto!,
         barangayClearancePhoto: _brgyPhoto!,
+        onDocumentsUploaded: () {
+          if (mounted) setState(() => _submitPhase = 'creating');
+        },
       );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -129,7 +143,10 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       if (!mounted) return;
       _showError(e.message);
     } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      if (mounted) setState(() {
+        _isSubmitting = false;
+        _submitPhase = null;
+      });
     }
   }
 
@@ -162,10 +179,11 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      builder: (sheetContext) => Container(
         decoration: const BoxDecoration(color: AppColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
+        padding: EdgeInsets.fromLTRB(20, 14, 20,
+            32 + MediaQuery.of(sheetContext).padding.bottom),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4,
               decoration: BoxDecoration(color: AppColors.surfaceStrong,
@@ -259,10 +277,18 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(22, 12, 22, 44),
             child: Column(children: [
-              if (_isSignUp && _step > 1)
-                const SizedBox(height: 6)
-              else ...[
-                Container(
+              // Steps 2–4 hide the tab pill — a user mid-registration
+              // shouldn't be able to jump to Log In — but it stays laid out so
+              // the header is exactly the same height on every step. Reserving
+              // the real pill rather than a fixed SizedBox keeps that true if
+              // the font or the user's text scale changes. Taps can't reach it:
+              // maintainInteractivity defaults to false.
+              Visibility(
+                visible: !(_isSignUp && _step > 1),
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Container(
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.14),
                       borderRadius: BorderRadius.circular(50)),
                   padding: const EdgeInsets.all(4),
@@ -273,8 +299,8 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
                         onTap: () => setState(() { _isSignUp = false; _step = 1; })),
                   ]),
                 ),
-                const SizedBox(height: 13),
-              ],
+              ),
+              const SizedBox(height: 13),
               const _PolaMoveLogo(fontSize: 25),
               const SizedBox(height: 3),
               Text(_badgeLabel, style: TextStyle(fontFamily: 'Syne', fontSize: 11,
@@ -303,14 +329,14 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       const _StepLabel('Personal Information'),
       const SizedBox(height: 18),
       Row(children: [
-        Expanded(child: _FormField(label: 'First Name', controller: _fnCtrl, placeholder: 'Carlos',
+        Expanded(child: AppFormField(label: 'First Name', controller: _fnCtrl, placeholder: 'Carlos',
             errorText: _errors['firstName'])),
         const SizedBox(width: 8),
-        Expanded(child: _FormField(label: 'Last Name', controller: _lnCtrl, placeholder: 'Reyes',
+        Expanded(child: AppFormField(label: 'Last Name', controller: _lnCtrl, placeholder: 'Reyes',
             errorText: _errors['lastName'])),
       ]),
       const SizedBox(height: 12),
-      _DateField(label: 'Date of Birth', controller: _dobCtrl, placeholder: 'MM/DD/YYYY',
+      AppDateField(label: 'Date of Birth', controller: _dobCtrl, placeholder: 'MM/DD/YYYY',
         errorText: _errors['dateOfBirth'],
         onTap: () async {
           final picked = await showDatePicker(context: context,
@@ -323,24 +349,32 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
         },
       ),
       const SizedBox(height: 12),
-      _FormField(label: 'Phone Number', controller: _phCtrl, placeholder: '09XX XXX XXXX',
+      AppFormField(label: 'Phone Number', controller: _phCtrl, placeholder: '09XX XXX XXXX',
           keyboardType: TextInputType.phone, errorText: _errors['phone']),
       const SizedBox(height: 12),
-      _FormField(label: 'Email Address', controller: _emailCtrl,
+      AppFormField(label: 'Email Address', controller: _emailCtrl,
           placeholder: 'juan@email.com',
           keyboardType: TextInputType.emailAddress,
           errorText: _errors['email']),
       const SizedBox(height: 12),
-      _DropdownField<String>(label: 'Barangay', value: _selectedBarangay,
+      AppDropdownField<String>(label: 'Barangay', value: _selectedBarangay,
           placeholder: 'Select barangay…', items: kPolanguiBarangays, itemLabel: (e) => e,
           onChanged: (val) => setState(() => _selectedBarangay = val),
           errorText: _errors['barangay']),
       const SizedBox(height: 12),
-      _FormField(label: 'Password', controller: _pwCtrl, placeholder: 'Create password',
+      AppFormField(label: 'Password', controller: _pwCtrl, placeholder: 'Create password',
           obscure: _obscurePassword,
           onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
           errorText: _errors['password']),
-      const SizedBox(height: 22),
+      const SizedBox(height: 12),
+      AppFormField(label: 'Confirm Password', controller: _confirmPwCtrl,
+          placeholder: 'Re-enter password',
+          obscure: _obscureConfirmPassword,
+          onToggleObscure: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+          errorText: _errors['confirmPassword']),
+      const SizedBox(height: 18),
+      const _RegistrationNotice(),
+      const SizedBox(height: 18),
       _PrimaryButton(label: 'Continue →',
           onTap: () { if (_validateStep1()) { setState(() => _step = 2); } }),
       const SizedBox(height: 10),
@@ -354,15 +388,15 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       const SizedBox(height: 4),
       const _StepLabel('Vehicle Information'),
       const SizedBox(height: 18),
-      _FormField(label: 'Tricycle Plate No.', controller: _plateCtrl,
+      AppFormField(label: 'Tricycle Plate No.', controller: _plateCtrl,
           placeholder: 'e.g. POLO-1234', inputFormatters: [UpperCaseTextFormatter()],
           errorText: _errors['plateNo']),
       const SizedBox(height: 12),
-      _FormField(label: "Driver's License No.", controller: _licCtrl,
+      AppFormField(label: "Driver's License No.", controller: _licCtrl,
           placeholder: 'e.g. N01-23-456789', inputFormatters: [UpperCaseTextFormatter()],
           errorText: _errors['licenseNo']),
       const SizedBox(height: 12),
-      _DateField(label: 'License Expiry Date', controller: _licExpCtrl, placeholder: 'MM/DD/YYYY',
+      AppDateField(label: 'License Expiry Date', controller: _licExpCtrl, placeholder: 'MM/DD/YYYY',
         errorText: _errors['licenseExpiry'],
         onTap: () async {
           final picked = await showDatePicker(context: context,
@@ -373,11 +407,6 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
               '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
         },
       ),
-      const SizedBox(height: 12),
-      _DropdownField<String>(label: 'Preferred Route', value: _selectedRoute,
-          placeholder: 'Select route…', items: _routes, itemLabel: (e) => e,
-          onChanged: (val) => setState(() => _selectedRoute = val),
-          errorText: _errors['preferredRoute']),
       const SizedBox(height: 22),
       _PrimaryButton(label: 'Continue →',
           onTap: () { if (_validateStep2()) { setState(() => _step = 3); } }),
@@ -450,7 +479,6 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
         _ReviewRow('Plate No.', _plateCtrl.text.isEmpty ? '—' : _plateCtrl.text),
         _ReviewRow('License No.', _licCtrl.text.isEmpty ? '—' : _licCtrl.text),
         _ReviewRow('License Expiry', _licExpCtrl.text.isEmpty ? '—' : _licExpCtrl.text),
-        _ReviewRow('Preferred Route', _selectedRoute ?? '—'),
       ]),
       const SizedBox(height: 12),
       _ReviewSection(title: 'Documents', onEdit: () => setState(() => _step = 3), rows: [
@@ -470,6 +498,14 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       const SizedBox(height: 22),
       _PrimaryButton(label: _isSubmitting ? 'Submitting…' : 'Submit for Approval 🛺',
           onTap: _isSubmitting ? null : _submitApplication),
+      if (_isSubmitting) ...[
+        const SizedBox(height: 8),
+        Text(
+          _submitPhase == 'creating' ? 'Creating your account…' : 'Uploading documents…',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+        ),
+      ],
       const SizedBox(height: 10),
       _GhostButton(label: '← Back', onTap: () => setState(() => _step = 3)),
     ]);
@@ -477,11 +513,11 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
 
   Widget _buildLogIn() {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _FormField(label: 'Email or Phone Number', controller: _liPhCtrl,
+      AppFormField(label: 'Email or Phone Number', controller: _liPhCtrl,
           placeholder: 'juan@email.com or 09XX XXX XXXX',
           errorText: _errors['liPhone']),
       const SizedBox(height: 12),
-      _FormField(label: 'Password', controller: _liPwCtrl, placeholder: 'Your password',
+      AppFormField(label: 'Password', controller: _liPwCtrl, placeholder: 'Your password',
           obscure: _liObscure, onToggleObscure: () => setState(() => _liObscure = !_liObscure),
           errorText: _errors['liPassword']),
       const SizedBox(height: 22),
@@ -496,6 +532,39 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
 // ════════════════════════════════════════════════════
 // SHARED WIDGETS
 // ════════════════════════════════════════════════════
+
+class _RegistrationNotice extends StatelessWidget {
+  const _RegistrationNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primaryTint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.22)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text(kRegistrationNoticeTitle,
+            style: TextStyle(fontFamily: 'Syne', fontSize: 13,
+                fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 6),
+        const Text(kRegistrationNoticeBody,
+            style: TextStyle(fontFamily: 'DM Sans', fontSize: 12,
+                color: AppColors.textSecondary, height: 1.5)),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PrivacyScreen())),
+          child: const Text(kRegistrationNoticeViewPrivacyButton,
+              style: TextStyle(fontFamily: 'DM Sans', fontSize: 12,
+                  fontWeight: FontWeight.w700, color: AppColors.primary)),
+        ),
+      ]),
+    );
+  }
+}
 
 class _PickerOption extends StatelessWidget {
   final IconData icon;
@@ -628,105 +697,6 @@ class _StepLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(text, textAlign: TextAlign.center,
       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textTertiary));
-}
-
-class _FormField extends StatelessWidget {
-  final String label;
-  final String placeholder;
-  final TextEditingController controller;
-  final TextInputType? keyboardType;
-  final bool obscure;
-  final VoidCallback? onToggleObscure;
-  final List<TextInputFormatter>? inputFormatters;
-  final String? errorText;
-
-  const _FormField({required this.label, required this.placeholder, required this.controller,
-      this.keyboardType, this.obscure = false, this.onToggleObscure, this.inputFormatters,
-      this.errorText});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: AppColors.textSecondary, letterSpacing: 0.7)),
-      const SizedBox(height: 5),
-      TextFormField(controller: controller, keyboardType: keyboardType,
-        obscureText: obscure, inputFormatters: inputFormatters,
-        style: const TextStyle(fontFamily: 'DM Sans', fontSize: 14,
-            fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: placeholder, errorText: errorText,
-          suffixIcon: onToggleObscure != null
-              ? GestureDetector(onTap: onToggleObscure,
-                  child: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                      color: AppColors.textTertiary, size: 18)) : null)),
-    ]);
-  }
-}
-
-class _DateField extends StatelessWidget {
-  final String label;
-  final String placeholder;
-  final TextEditingController controller;
-  final VoidCallback onTap;
-  final String? errorText;
-
-  const _DateField({required this.label, required this.placeholder,
-      required this.controller, required this.onTap, this.errorText});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: AppColors.textSecondary, letterSpacing: 0.7)),
-      const SizedBox(height: 5),
-      TextFormField(controller: controller, readOnly: true, onTap: onTap,
-        style: const TextStyle(fontFamily: 'DM Sans', fontSize: 14,
-            fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-        decoration: InputDecoration(hintText: placeholder, errorText: errorText,
-          suffixIcon: const Icon(Icons.calendar_today_outlined,
-              color: AppColors.textTertiary, size: 17))),
-    ]);
-  }
-}
-
-class _DropdownField<T> extends StatelessWidget {
-  final String label;
-  final String placeholder;
-  final T? value;
-  final List<T> items;
-  final String Function(T) itemLabel;
-  final void Function(T?) onChanged;
-  final String? errorText;
-
-  const _DropdownField({required this.label, required this.placeholder, required this.value,
-      required this.items, required this.itemLabel, required this.onChanged, this.errorText});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-          color: AppColors.textSecondary, letterSpacing: 0.7)),
-      const SizedBox(height: 5),
-      DropdownButtonFormField<T>(
-        value: value,
-        hint: Text(placeholder, style: const TextStyle(fontFamily: 'DM Sans',
-            fontSize: 14, color: AppColors.textTertiary)),
-        items: items.map((e) => DropdownMenuItem(value: e,
-            child: Text(itemLabel(e), style: const TextStyle(fontFamily: 'DM Sans',
-                fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)))).toList(),
-        onChanged: onChanged,
-        decoration: InputDecoration(filled: true, fillColor: AppColors.surfaceAlt,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          errorText: errorText,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0x1C14142A), width: 1.5)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0x1C14142A), width: 1.5)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5))),
-        dropdownColor: AppColors.surfaceAlt, borderRadius: BorderRadius.circular(12)),
-    ]);
-  }
 }
 
 class _ReviewSection extends StatelessWidget {

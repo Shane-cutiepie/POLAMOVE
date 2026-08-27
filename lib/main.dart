@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'core/services/fare_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/splash/splash_screen.dart';
 
@@ -9,6 +10,11 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Deliberately not awaited — fare config is not worth delaying the splash
+  // screen for, and FareService falls back to its defaults until it resolves.
+  FareService.load();
+
   runApp(const PolaMoveApp());
 }
 

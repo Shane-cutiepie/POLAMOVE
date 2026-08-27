@@ -2,8 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/polangui_locations.dart';
+import '../../core/services/chat_service.dart';
 import '../../core/services/ride_service.dart';
+import '../../core/services/sound_service.dart';
+import '../shared/animated_map_marker.dart';
+import '../shared/cancel_ride_sheet.dart';
+import '../shared/chat_screen.dart';
+import '../shared/user_avatar.dart';
 
 class RideStatusScreen extends StatefulWidget {
   final String rideId;
@@ -31,8 +39,6 @@ class _RideStatusScreenState extends State<RideStatusScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
 
-  static const LatLng _polangui = LatLng(13.2924, 123.4866);
-
   final _stepLabels = ['Search', 'Found', 'Arrived', 'Trip', 'Done'];
   final _stepEmojis = ['🔍', '🛺', '📍', '🏁', '✅'];
 
@@ -40,8 +46,40 @@ class _RideStatusScreenState extends State<RideStatusScreen>
   String? _assignedDriverId;
   String _driverName = '—';
   String _driverPlate = '—';
-  String _driverRating = '—';
   String _driverTrips = '0';
+  int _driverAvatarIndex = 0;
+  String? _driverAvatarUrl;
+
+  // Set directly from the ride stream, for the cancel sheet's fee logic.
+  String? _rideStatus;
+
+  final MapController _mapController = MapController();
+  static final Distance _distance = const Distance();
+
+  /// Beyond this from the map's current centre, the driver has drifted far
+  /// enough off-screen to be worth recentring for.
+  static const double _recentreThresholdMeters = 200;
+
+  // Firestore's .snapshots() returns a new Stream instance on every call, so
+  // this is cached per driverId rather than created inline in build() —
+  // otherwise every unrelated ride-document change (a status update, a
+  // field write) would tear down and re-subscribe this stream, dropping the
+  // last known driver position and re-triggering the map for no reason.
+  String? _driverStreamDriverId;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _driverLocationStream;
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _watchDriverLocation(
+      String? driverId) {
+    if (driverId == null) return null;
+    if (_driverStreamDriverId != driverId) {
+      _driverStreamDriverId = driverId;
+      _driverLocationStream = FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(driverId)
+          .snapshots();
+    }
+    return _driverLocationStream;
+  }
 
   @override
   void initState() {
@@ -77,30 +115,64 @@ class _RideStatusScreenState extends State<RideStatusScreen>
       final name = '$first $last'.trim();
       _driverName = name.isEmpty ? '—' : name;
       _driverPlate = driver?['plateNo'] ?? '—';
-      final rating = (driver?['rating'] ?? 0).toDouble();
-      _driverRating = rating > 0 ? rating.toStringAsFixed(1) : '—';
       _driverTrips = '${driver?['totalRides'] ?? 0}';
+      _driverAvatarIndex = (user?['avatarIndex'] ?? 0) as int;
+      _driverAvatarUrl = user?['avatarUrl'] as String?;
     });
   }
 
+  void _openChat() {
+    final driverId = _assignedDriverId;
+    if (driverId == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        rideId: widget.rideId,
+        otherUid: driverId,
+        otherName: _driverName,
+        otherRole: 'driver',
+      ),
+    ));
+  }
+
   Future<void> _cancelRide() async {
-    try {
-      await RideService.cancelRide(widget.rideId);
+    final cancelled = await showCancelRideSheet(context,
+        rideId: widget.rideId, role: 'passenger', status: _rideStatus);
+    if (cancelled && mounted) Navigator.of(context).pop();
+  }
+
+  /// Recentres on the driver once they've drifted more than ~200 m from
+  /// what's currently on screen — far enough to have wandered off the
+  /// visible map. Checked against the real driver position, not the
+  /// animated marker: the animated marker can lag it by up to the ~1.2 s
+  /// animation duration, so checking that instead would recentre a beat
+  /// late and fight the animation still catching up.
+  ///
+  /// Comparing against the map's *current* centre (rather than tracking the
+  /// last recentre point separately) is what keeps this from firing on
+  /// every position update: after a recentre, the centre itself becomes the
+  /// driver's position, so the next 200 m has to accumulate again before
+  /// another one fires — small per-update drift alone never crosses the
+  /// threshold. A user who has panned away is measured from wherever they
+  /// panned to, same as anyone else.
+  ///
+  /// Deferred to a post-frame callback because it's reached from within
+  /// build() (the driver-location StreamBuilder below), and
+  /// MapController.move() notifies its listeners synchronously — calling it
+  /// mid-build risks a "setState during build" error.
+  void _maybeRecentreOnDriver(LatLng driverPos) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      Navigator.of(context).pop();
-    } on RideException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e.message, style: const TextStyle(fontFamily: 'DM Sans')),
-        backgroundColor: AppColors.primaryDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
-    }
+      final metres = _distance.as(
+          LengthUnit.Meter, _mapController.camera.center, driverPos);
+      if (metres > _recentreThresholdMeters) {
+        _mapController.move(driverPos, _mapController.camera.zoom);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _mapController.dispose();
     _pulseController.dispose();
     super.dispose();
   }
@@ -159,7 +231,8 @@ class _RideStatusScreenState extends State<RideStatusScreen>
         // forever otherwise, since nothing else ever clears it. Best-effort:
         // the screen is already gone, so there's nowhere to surface a failure.
         if (_currentStep == 0) {
-          RideService.cancelRide(widget.rideId).catchError((_) {});
+          RideService.cancelRide(widget.rideId, reason: 'changed_mind')
+              .catchError((_) {});
         }
       },
       child: Scaffold(
@@ -174,7 +247,24 @@ class _RideStatusScreenState extends State<RideStatusScreen>
 
             final ride = snapshot.data!.data() ?? {};
             // Status is the source of truth — the step is only a view of it.
-            _currentStep = _stepFromStatus(ride['status'] as String?);
+            // Read the previous value before overwriting it: comparing the
+            // two is both the transition check below and, for free, the
+            // initial-snapshot guard — _rideStatus starts null, so the very
+            // first delivery (including one that opens straight onto an
+            // already-accepted ride) never reads as "just left searching".
+            final previousStatus = _rideStatus;
+            _rideStatus = ride['status'] as String?;
+            _currentStep = _stepFromStatus(_rideStatus);
+
+            if (previousStatus == 'searching' && _rideStatus == 'accepted') {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted &&
+                    WidgetsBinding.instance.lifecycleState ==
+                        AppLifecycleState.resumed) {
+                  SoundService.rideAlert();
+                }
+              });
+            }
 
             final driverId = ride['driverId'] as String?;
             if (driverId != null && driverId != _assignedDriverId) {
@@ -183,14 +273,14 @@ class _RideStatusScreenState extends State<RideStatusScreen>
               });
             }
 
-            return _buildContent(context);
+            return _buildContent(context, driverId);
           },
         ),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context) {
+  Widget _buildContent(BuildContext context, String? driverId) {
     return Column(children: [
         // Step bar
         _buildStepBar(),
@@ -198,28 +288,47 @@ class _RideStatusScreenState extends State<RideStatusScreen>
         _buildStatusHeader(),
         // Map
         Expanded(child: Stack(children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: _polangui, initialZoom: 15,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.polamove.app'),
-              MarkerLayer(markers: [
-                Marker(point: _polangui, width: 36, height: 36,
-                  child: Container(
-                    decoration: BoxDecoration(color: AppColors.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.4),
-                            blurRadius: 10)]),
-                    child: const Center(child: Text('🛺', style: TextStyle(fontSize: 16)))),
+          // Driver's live location, from drivers/{driverId} — no driver
+          // assigned yet (still searching) falls back to the town centre,
+          // matching the marker's old fixed position.
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: _watchDriverLocation(driverId) ??
+                const Stream<DocumentSnapshot<Map<String, dynamic>>>.empty(),
+            builder: (context, driverSnap) {
+              final loc = driverSnap.data?.data()?['location'];
+              // Real (non-interpolated) position, used both as the marker's
+              // animation target and for the recentre check below — kept
+              // null rather than falling back to kPolanguiCentre so "no
+              // driver position yet" doesn't look like a real, on-target
+              // driver.
+              final driverPos =
+                  loc is GeoPoint ? LatLng(loc.latitude, loc.longitude) : null;
+              if (driverPos != null) _maybeRecentreOnDriver(driverPos);
+
+              return FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: kPolanguiCentre, initialZoom: 15,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag),
                 ),
-              ]),
-            ],
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.polamove.app'),
+                  AnimatedMapMarker(
+                    target: driverPos ?? kPolanguiCentre, width: 36, height: 36,
+                    builder: (context, pos) => Container(
+                      decoration: BoxDecoration(color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.4),
+                              blurRadius: 10)]),
+                      child: const Center(child: Text('🛺', style: TextStyle(fontSize: 16)))),
+                  ),
+                ],
+              );
+            },
           ),
           // ETA chip
           Positioned(top: 10, right: 10,
@@ -341,22 +450,18 @@ class _RideStatusScreenState extends State<RideStatusScreen>
                 decoration: BoxDecoration(color: AppColors.primaryTint,
                     shape: BoxShape.circle,
                     border: Border.all(color: AppColors.primary.withOpacity(0.3), width: 1.5)),
-                child: const Center(child: Text('👨', style: TextStyle(fontSize: 22)))),
+                child: UserAvatar(avatarUrl: _driverAvatarUrl,
+                    avatarIndex: _driverAvatarIndex, size: 46, emojiSize: 22)),
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(_driverName, style: const TextStyle(fontFamily: 'Syne', fontSize: 14,
                     fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                 Text('🛺 $_driverPlate · Red Tricycle',
                     style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                Text('⭐ $_driverRating · $_driverTrips trips',
+                Text('🛺 $_driverTrips trips',
                     style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
               ])),
-              // Call & chat buttons
-              Row(children: [
-                _ActionBtn(emoji: '📞', onTap: () {}),
-                const SizedBox(width: 6),
-                _ActionBtn(emoji: '💬', onTap: () {}),
-              ]),
+              _ChatButton(rideId: widget.rideId, onTap: _openChat),
             ]),
           ),
           const SizedBox(height: 12),
@@ -410,19 +515,34 @@ class _RideStatusScreenState extends State<RideStatusScreen>
   }
 }
 
-class _ActionBtn extends StatelessWidget {
-  final String emoji;
+/// Chat entry point on the driver card, with a small unread-message dot
+/// positioned the same way as the bottom-nav Notifs tab badge.
+class _ChatButton extends StatelessWidget {
+  final String rideId;
   final VoidCallback onTap;
-  const _ActionBtn({required this.emoji, required this.onTap});
+  const _ChatButton({required this.rideId, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     return GestureDetector(
       onTap: onTap,
-      child: Container(width: 36, height: 36,
-        decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
-            border: Border.all(color: AppColors.border, width: 1.5)),
-        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 16)))),
+      child: Stack(clipBehavior: Clip.none, children: [
+        Container(width: 36, height: 36,
+          decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle,
+              border: Border.all(color: AppColors.border, width: 1.5)),
+          child: const Center(child: Text('💬', style: TextStyle(fontSize: 16)))),
+        if (uid != null)
+          Positioned(top: -2, right: -2, child: StreamBuilder<int>(
+            stream: ChatService.unreadCount(rideId, uid),
+            builder: (context, snapshot) {
+              if ((snapshot.data ?? 0) == 0) return const SizedBox.shrink();
+              return Container(width: 10, height: 10,
+                decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.surface, width: 1.5)));
+            },
+          )),
+      ]),
     );
   }
 }

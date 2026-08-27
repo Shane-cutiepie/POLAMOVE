@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/fare_service.dart';
 import '../../core/services/ride_service.dart';
+import '../shared/location_picker_sheet.dart';
 import 'ride_status_screen.dart';
 
 class BookingScreen extends StatefulWidget {
-  const BookingScreen({super.key});
+  /// Pickup already chosen on the home screen, if any. Pre-fills the pickup row
+  /// so a passenger who set it there doesn't have to set it twice.
+  final String? initialPickup;
+
+  const BookingScreen({super.key, this.initialPickup});
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
@@ -18,16 +25,32 @@ class _BookingScreenState extends State<BookingScreen> {
   String? _destination;
   bool _isBooking = false;
 
-  static const double _basefare = 15.0;
-  static const double _soloSurcharge = 1.3;
-  static const double _rentRate = 60.0;
+  @override
+  void initState() {
+    super.initState();
+    _pickup = widget.initialPickup;
+  }
 
+  /// Seat and hour limits are admin-configurable, so the stored selection can
+  /// fall outside them if a limit tightens mid-session. These keep the shown
+  /// chip, the quoted fare, and the booked ride agreeing on one value.
+  int get _seatCount {
+    final max = FareService.maxSeats < 2 ? 2 : FareService.maxSeats;
+    return _seats > max ? max : _seats;
+  }
+
+  int get _rentHourCount =>
+      _rentHours < FareService.rentMinHours ? FareService.rentMinHours : _rentHours;
+
+  /// Fares come from settings/fares via FareService. The route sets the base
+  /// fare; the ride type modifies it. PolaRent ignores the route — it is
+  /// priced by the hour.
   double? get _fare {
     if (_pickup == null || _destination == null) return null;
     switch (_selectedType) {
-      case 'solo': return _basefare * _soloSurcharge;
-      case 'share': return _basefare * _seats;
-      case 'rent': return _rentRate * _rentHours;
+      case 'solo': return FareService.soloFare(_pickup, _destination);
+      case 'share': return FareService.shareFare(_pickup, _destination, _seatCount);
+      case 'rent': return FareService.rentFare(_rentHourCount);
       default: return null;
     }
   }
@@ -42,8 +65,8 @@ class _BookingScreenState extends State<BookingScreen> {
     if (_pickup == null || _destination == null) return 'Select pickup & destination';
     switch (_selectedType) {
       case 'solo': return 'PolaSolo — exclusive ride';
-      case 'share': return 'PolaShare — $_seats seat${_seats > 1 ? 's' : ''}';
-      case 'rent': return 'PolaRent — ${_rentHours}h exclusive rental';
+      case 'share': return 'PolaShare — $_seatCount seat${_seatCount > 1 ? 's' : ''}';
+      case 'rent': return 'PolaRent — ${_rentHourCount}h exclusive rental';
       default: return '';
     }
   }
@@ -51,15 +74,39 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _bookRide() async {
     if (_pickup == null || _destination == null) return;
     setState(() => _isBooking = true);
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final cooldown = uid == null ? null : await RideService.activeCooldown(uid);
+    if (cooldown != null) {
+      if (mounted) {
+        setState(() => _isBooking = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.',
+            style: const TextStyle(fontFamily: 'DM Sans'),
+          ),
+          backgroundColor: AppColors.primaryDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+      return;
+    }
+
     try {
       final rideId = await RideService.createRide(
         pickup: _pickup!,
         destination: _destination!,
         rideTypeShortId: _selectedType,
-        baseFare: _basefare,
-        surcharge: _selectedType == 'solo' ? _basefare * (_soloSurcharge - 1) : 0,
-        seats: _selectedType == 'share' ? _seats : 1,
-        hours: _selectedType == 'rent' ? _rentHours : 0,
+        // The route's base fare at the moment of booking, so a completed ride
+        // records what was actually charged even if the admin changes it later.
+        baseFare: FareService.baseFareFor(_pickup, _destination),
+        surcharge: _selectedType == 'solo'
+            ? FareService.soloFare(_pickup, _destination) -
+                FareService.baseFareFor(_pickup, _destination)
+            : 0,
+        seats: _selectedType == 'share' ? _seatCount : 1,
+        hours: _selectedType == 'rent' ? _rentHourCount : 0,
         totalFare: _fare ?? 0,
       );
       if (!mounted) return;
@@ -122,7 +169,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   id: 'solo', emoji: '🚖', name: 'PolaSolo',
                   description: 'Exclusive ride — just for you\nNo waiting · Small surcharge added',
                   price: _pickup != null && _destination != null
-                      ? '₱${(_basefare * _soloSurcharge).toStringAsFixed(0)}' : '₱—',
+                      ? '₱${FareService.soloFare(_pickup, _destination).toStringAsFixed(0)}' : '₱—',
                   selected: _selectedType == 'solo',
                   onTap: () => setState(() => _selectedType = 'solo'),
                   extra: null,
@@ -135,7 +182,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   id: 'share', emoji: '👥', name: 'PolaShare',
                   description: 'Group ride — fare × seats booked',
                   price: _pickup != null && _destination != null
-                      ? '₱${(_basefare * _seats).toStringAsFixed(0)}' : '₱—',
+                      ? '₱${FareService.shareFare(_pickup, _destination, _seats).toStringAsFixed(0)}' : '₱—',
                   selected: _selectedType == 'share',
                   onTap: () => setState(() => _selectedType = 'share'),
                   extra: _selectedType == 'share'
@@ -149,7 +196,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   id: 'rent', emoji: '🗓️', name: 'PolaRent',
                   description: 'Rent the whole tricycle by the hour\nPerfect for errands, groceries & trips',
                   price: _selectedType == 'rent'
-                      ? '₱${(_rentRate * _rentHours).toStringAsFixed(0)}' : '₱—',
+                      ? '₱${FareService.rentFare(_rentHours).toStringAsFixed(0)}' : '₱—',
                   selected: _selectedType == 'rent',
                   onTap: () => setState(() => _selectedType = 'rent'),
                   extra: _selectedType == 'rent'
@@ -205,7 +252,7 @@ class _BookingScreenState extends State<BookingScreen> {
           label: _pickup ?? 'Select pickup…',
           hasValue: _pickup != null,
           onTap: () async {
-            final result = await _showLocationPicker(context, 'Set Pickup Location');
+            final result = await showLocationPicker(context, 'Set Pickup Location');
             if (result != null) setState(() => _pickup = result);
           },
         ),
@@ -220,7 +267,7 @@ class _BookingScreenState extends State<BookingScreen> {
           label: _destination ?? 'Select destination…',
           hasValue: _destination != null,
           onTap: () async {
-            final result = await _showLocationPicker(context, 'Set Destination');
+            final result = await showLocationPicker(context, 'Set Destination');
             if (result != null) setState(() => _destination = result);
           },
         ),
@@ -257,7 +304,12 @@ class _BookingScreenState extends State<BookingScreen> {
         const Text('Seats:', style: TextStyle(fontSize: 12,
             color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
         const SizedBox(width: 8),
-        ...([2, 3, 4, 5].map((s) => Padding(
+        // Upper bound comes from settings/fares; 2 is the smallest sensible
+        // shared ride, so the row never renders empty.
+        ...(List.generate(
+                (FareService.maxSeats < 2 ? 2 : FareService.maxSeats) - 1,
+                (i) => i + 2)
+            .map((s) => Padding(
           padding: const EdgeInsets.only(right: 6),
           child: GestureDetector(
             onTap: () => setState(() => _seats = s),
@@ -265,14 +317,14 @@ class _BookingScreenState extends State<BookingScreen> {
               duration: const Duration(milliseconds: 180),
               width: 34, height: 30,
               decoration: BoxDecoration(
-                color: _seats == s ? AppColors.primary : AppColors.surfaceAlt,
+                color: _seatCount == s ? AppColors.primary : AppColors.surfaceAlt,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                    color: _seats == s ? AppColors.primary : AppColors.border, width: 1.5),
+                    color: _seatCount == s ? AppColors.primary : AppColors.border, width: 1.5),
               ),
               child: Center(child: Text('$s', style: TextStyle(fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: _seats == s ? Colors.white : AppColors.textSecondary))),
+                  color: _seatCount == s ? Colors.white : AppColors.textSecondary))),
             ),
           ),
         ))),
@@ -288,7 +340,9 @@ class _BookingScreenState extends State<BookingScreen> {
           const Text('Hours:', style: TextStyle(fontSize: 12,
               color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
           const SizedBox(width: 8),
-          ...([1, 2, 3, 4].map((h) => Padding(
+          // Lower bound comes from settings/fares — hours below the minimum
+          // rental are not offered.
+          ...([1, 2, 3, 4].where((h) => h >= FareService.rentMinHours).map((h) => Padding(
             padding: const EdgeInsets.only(right: 6),
             child: GestureDetector(
               onTap: () => setState(() => _rentHours = h),
@@ -296,14 +350,14 @@ class _BookingScreenState extends State<BookingScreen> {
                 duration: const Duration(milliseconds: 180),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: _rentHours == h ? AppColors.primary : AppColors.surfaceAlt,
+                  color: _rentHourCount == h ? AppColors.primary : AppColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: _rentHours == h ? AppColors.primary : AppColors.border, width: 1.5),
+                      color: _rentHourCount == h ? AppColors.primary : AppColors.border, width: 1.5),
                 ),
                 child: Text('${h}h', style: TextStyle(fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: _rentHours == h ? Colors.white : AppColors.textSecondary)),
+                    color: _rentHourCount == h ? Colors.white : AppColors.textSecondary)),
               ),
             ),
           ))),
@@ -343,78 +397,12 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
-  Future<String?> _showLocationPicker(BuildContext context, String title) async {
-    final locations = [
-      'Polangui Centro', 'Public Market', 'Bus Terminal',
-      'Bicol University Polangui', 'Polangui General Hospital',
-      'Lidong', 'Sabang', 'San Francisco', 'Santa Cruz', 'Yapad',
-    ];
-    return showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.4,
-        builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(children: [
-            Padding(padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-              child: Column(children: [
-                Container(width: 40, height: 4,
-                    decoration: BoxDecoration(color: AppColors.surfaceStrong,
-                        borderRadius: BorderRadius.circular(2))),
-                const SizedBox(height: 14),
-                Text(title, style: const TextStyle(fontFamily: 'Syne', fontSize: 15,
-                    fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                const SizedBox(height: 10),
-                TextField(
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: 'Search location in Polangui…',
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        color: AppColors.textTertiary, size: 18),
-                    filled: true, fillColor: AppColors.surfaceAlt,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0x1C14142A))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0x1C14142A))),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-                  ),
-                ),
-              ]),
-            ),
-            const Padding(padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Align(alignment: Alignment.centerLeft,
-                child: Text('Suggested Locations', style: TextStyle(fontSize: 11,
-                    fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.5)))),
-            Expanded(child: ListView.separated(
-              controller: controller,
-              itemCount: locations.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, indent: 52,
-                  color: Color(0x1C14142A)),
-              itemBuilder: (_, i) => ListTile(
-                leading: Container(width: 34, height: 34,
-                  decoration: BoxDecoration(color: AppColors.primaryTint,
-                      borderRadius: BorderRadius.circular(10)),
-                  child: const Icon(Icons.location_on_rounded,
-                      color: AppColors.primary, size: 16)),
-                title: Text(locations[i], style: const TextStyle(fontSize: 14,
-                    fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                subtitle: Text('Polangui, Albay', style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary)),
-                onTap: () => Navigator.pop(context, locations[i]),
-              ),
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
+}
+
+String _formatCooldownTime(DateTime d) {
+  final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final period = d.hour >= 12 ? 'PM' : 'AM';
+  return '$hour12:${d.minute.toString().padLeft(2, '0')} $period';
 }
 
 class _LocationRow extends StatelessWidget {

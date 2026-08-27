@@ -5,12 +5,22 @@ import '../../core/constants/app_colors.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/ride_service.dart';
 import '../role_selection/role_selection_screen.dart';
+import '../shared/about_screen.dart';
+import '../shared/avatar_picker_sheet.dart';
 import '../shared/change_password_screen.dart';
 import '../shared/edit_profile_screen.dart';
+import '../shared/help_support_screen.dart';
 import '../shared/notification_settings_screen.dart';
+import '../shared/privacy_screen.dart';
+import '../shared/terms_screen.dart';
+import '../shared/user_avatar.dart';
 
 class PassengerProfileScreen extends StatelessWidget {
-  const PassengerProfileScreen({super.key});
+  /// Returns the bottom-nav shell to the Home tab. This screen is a tab, not
+  /// a pushed route, so there is nothing for `Navigator.pop` to pop.
+  final VoidCallback? onBack;
+
+  const PassengerProfileScreen({super.key, this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +46,8 @@ class PassengerProfileScreen extends StatelessWidget {
           name: fullName.isEmpty ? '—' : fullName,
           email: user['email'] ?? '—',
           phone: user['phone'] ?? '—',
+          avatarIndex: (user['avatarIndex'] ?? 0) as int,
+          avatarUrl: user['avatarUrl'] as String?,
         );
       },
     );
@@ -45,10 +57,12 @@ class PassengerProfileScreen extends StatelessWidget {
     required String name,
     required String email,
     required String phone,
+    required int avatarIndex,
+    required String? avatarUrl,
   }) {
     return Column(children: [
       // Red header with avatar
-      _buildHeader(context, name),
+      _buildHeader(context, name, avatarIndex, avatarUrl),
       // Settings list
       Expanded(
         child: SingleChildScrollView(
@@ -77,16 +91,27 @@ class PassengerProfileScreen extends StatelessWidget {
               _SettingsItem(emoji: '🔔', label: 'Notifications',
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => const NotificationSettingsScreen()))),
-              _SettingsItem(emoji: '🗺️', label: 'Default Location', value: 'Polangui Centro', onTap: () {}),
+              _SettingsItem(emoji: '🗺️', label: 'Default Location',
+                  value: 'Polangui Municipal Hall',
+                  onTap: () => _showSoon(context, 'Changing your default location')),
             ]),
             const SizedBox(height: 16),
             // Support section
             _SectionLabel('Support'),
             const SizedBox(height: 8),
             _SettingsCard(items: [
-              _SettingsItem(emoji: '❓', label: 'Help & FAQ', onTap: () {}),
-              _SettingsItem(emoji: '📋', label: 'Terms & Conditions', onTap: () {}),
-              _SettingsItem(emoji: '🛡️', label: 'Privacy Policy', onTap: () {}),
+              _SettingsItem(emoji: '❓', label: 'Help & Support',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const HelpSupportScreen()))),
+              _SettingsItem(emoji: 'ℹ️', label: 'About PolaMove',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const AboutScreen()))),
+              _SettingsItem(emoji: '📋', label: 'Terms & Conditions',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const TermsScreen()))),
+              _SettingsItem(emoji: '🛡️', label: 'Privacy Policy',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const PrivacyScreen()))),
             ]),
             const SizedBox(height: 16),
             // App version
@@ -117,6 +142,18 @@ class PassengerProfileScreen extends StatelessWidget {
     ]);
   }
 
+  /// Mirrors the driver profile's wording so an unbuilt feature says so
+  /// plainly instead of doing nothing when tapped.
+  static void _showSoon(BuildContext context, String action) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('$action is not available yet.',
+          style: const TextStyle(fontFamily: 'DM Sans')),
+      backgroundColor: AppColors.textPrimary,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
   void _openEditProfile(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => const EditProfileScreen(isDriver: false)));
@@ -139,15 +176,13 @@ class PassengerProfileScreen extends StatelessWidget {
           const SizedBox(width: 8),
           _StatCard(emoji: '💰', value: '₱${spent.toStringAsFixed(0)}',
               label: 'Total Spent'),
-          const SizedBox(width: 8),
-          // TODO: Firebase rating system not yet implemented
-          _StatCard(emoji: '⭐', value: '—', label: 'Rating'),
         ]);
       },
     );
   }
 
-  Widget _buildHeader(BuildContext context, String name) {
+  Widget _buildHeader(BuildContext context, String name, int avatarIndex,
+      String? avatarUrl) {
     return Container(
       color: AppColors.primary,
       child: Stack(children: [
@@ -158,12 +193,28 @@ class PassengerProfileScreen extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
             child: Row(children: [
+              // Matches RedHeader's back control, since this tab has its own
+              // taller header rather than using RedHeader directly.
+              GestureDetector(
+                onTap: onBack ?? () => Navigator.maybePop(context),
+                child: Container(width: 31, height: 31,
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: Colors.white.withOpacity(0.2))),
+                  child: const Icon(Icons.chevron_left_rounded,
+                      color: Colors.white, size: 20)),
+              ),
+              const SizedBox(width: 10),
               // Avatar
-              Container(width: 60, height: 60,
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.4), width: 2)),
-                child: const Center(child: Text('👤', style: TextStyle(fontSize: 28)))),
+              GestureDetector(
+                onTap: () => showAvatarPickerSheet(context, avatarIndex),
+                child: Container(width: 60, height: 60,
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withOpacity(0.4), width: 2)),
+                  child: UserAvatar(avatarUrl: avatarUrl, avatarIndex: avatarIndex,
+                      size: 60, emojiSize: 28)),
+              ),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(name, style: const TextStyle(fontFamily: 'Syne',
@@ -172,20 +223,6 @@ class PassengerProfileScreen extends StatelessWidget {
                 Text('Passenger · Polangui',
                     style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7))),
               ])),
-              // Edit button
-              GestureDetector(
-                onTap: () => _openEditProfile(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  child: const Text('Edit', style: TextStyle(fontSize: 12,
-                      fontWeight: FontWeight.w700, color: Colors.white)),
-                ),
-              ),
             ]),
           ),
         ),
@@ -197,10 +234,11 @@ class PassengerProfileScreen extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      builder: (sheetContext) => Container(
         decoration: const BoxDecoration(color: AppColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
+        padding: EdgeInsets.fromLTRB(20, 14, 20,
+            32 + MediaQuery.of(sheetContext).padding.bottom),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4,
               decoration: BoxDecoration(color: AppColors.surfaceStrong,

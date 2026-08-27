@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/cancel_reasons.dart';
 import '../../core/services/ride_service.dart';
+import '../shared/chat_screen.dart';
+import '../shared/red_header.dart';
 
 enum RideTypeFilter { all, solo, share, rent }
 
 enum RideStatus { completed, cancelled }
 
 class _RideRecord {
+  final String rideId;
+  final String? passengerId;
   final String passengerName;
   final String pickup;
   final String dropoff;
@@ -19,8 +24,14 @@ class _RideRecord {
   final int seats; // relevant for PolaShare
   final double hours; // relevant for PolaRent
   final double totalFare;
+  final double cancellationFee;
+  final String? cancelReason;
+  final String? cancelReasonText;
+  final String? cancelledByRole;
 
   const _RideRecord({
+    required this.rideId,
+    this.passengerId,
     required this.passengerName,
     required this.pickup,
     required this.dropoff,
@@ -32,6 +43,10 @@ class _RideRecord {
     required this.totalFare,
     this.seats = 1,
     this.hours = 0,
+    this.cancellationFee = 0,
+    this.cancelReason,
+    this.cancelReasonText,
+    this.cancelledByRole,
   });
 
   /// The fare the passenger was quoted at booking time, rather than a
@@ -61,7 +76,11 @@ RideTypeFilter _typeFromRide(dynamic rideType) {
 }
 
 class DriverHistoryScreen extends StatefulWidget {
-  const DriverHistoryScreen({super.key});
+  /// Returns the bottom-nav shell to the Home tab. This screen is a tab, not
+  /// a pushed route, so there is nothing for `Navigator.pop` to pop.
+  final VoidCallback? onBack;
+
+  const DriverHistoryScreen({super.key, this.onBack});
 
   @override
   State<DriverHistoryScreen> createState() => _DriverHistoryScreenState();
@@ -91,7 +110,7 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
 
   /// Only finished rides belong in history — an accepted or ongoing ride is
   /// still on the tracking screen.
-  _RideRecord? _toRecord(Map<String, dynamic> ride) {
+  _RideRecord? _toRecord(Map<String, dynamic> ride, String rideId) {
     final RideStatus status;
     switch (ride['status']) {
       case 'completed':
@@ -108,6 +127,8 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
     final passengerId = ride['passengerId'] as String?;
 
     return _RideRecord(
+      rideId: rideId,
+      passengerId: passengerId,
       passengerName: passengerId == null ? '—' : (_names[passengerId] ?? '—'),
       pickup: ride['pickup']?['name'] ?? '—',
       dropoff: ride['dropoff']?['name'] ?? '—',
@@ -119,27 +140,23 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
       totalFare: (ride['totalFare'] ?? 0).toDouble(),
       seats: (ride['seats'] ?? 1).toInt(),
       hours: (ride['hours'] ?? 0).toDouble(),
+      cancellationFee: (ride['cancellationFee'] ?? 0).toDouble(),
+      cancelReason: ride['cancelReason'] as String?,
+      cancelReasonText: ride['cancelReasonText'] as String?,
+      cancelledByRole: ride['cancelledByRole'] as String?,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        title: const Text(
-          'Ride History',
-          style: TextStyle(
-            fontFamily: 'Syne',
-            fontWeight: FontWeight.w800,
-            fontSize: 20,
-            color: AppColors.textPrimary,
-          ),
-        ),
+    return Column(children: [
+      RedHeader(
+        title: 'Ride History',
+        subtitle: 'Your completed trips',
+        onBack: widget.onBack,
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      Expanded(
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: RideService.driverHistory(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -156,7 +173,7 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
           });
 
           final history = docs
-              .map((d) => _toRecord(d.data()))
+              .map((d) => _toRecord(d.data(), d.id))
               .whereType<_RideRecord>()
               .toList();
 
@@ -190,8 +207,9 @@ class _DriverHistoryScreenState extends State<DriverHistoryScreen> {
             ],
           );
         },
+        ),
       ),
-    );
+    ]);
   }
 }
 
@@ -315,6 +333,19 @@ class _HistoryCard extends StatelessWidget {
   final _RideRecord record;
   const _HistoryCard({required this.record});
 
+  void _openChat(BuildContext context) {
+    final passengerId = record.passengerId;
+    if (passengerId == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        rideId: record.rideId,
+        otherUid: passengerId,
+        otherName: record.passengerName,
+        otherRole: 'passenger',
+      ),
+    ));
+  }
+
   String _formatDate(DateTime d) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -375,14 +406,24 @@ class _HistoryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            record.passengerName,
-            style: const TextStyle(
-              fontFamily: 'DM Sans',
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
-              color: AppColors.textPrimary,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  record.passengerName,
+                  style: const TextStyle(
+                    fontFamily: 'DM Sans',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (record.passengerId != null) ...[
+                const SizedBox(width: 8),
+                _ChatIconButton(onTap: () => _openChat(context)),
+              ],
+            ],
           ),
           const SizedBox(height: 6),
           _RouteLine(pickup: record.pickup, dropoff: record.dropoff),
@@ -396,6 +437,34 @@ class _HistoryCard extends StatelessWidget {
               color: AppColors.textTertiary,
             ),
           ),
+          if (!isCompleted) ...[
+            const SizedBox(height: 6),
+            Text(
+              cancelReasonLabel(
+                cancelledByRole: record.cancelledByRole,
+                reason: record.cancelReason,
+                reasonText: record.cancelReasonText,
+              ),
+              style: const TextStyle(
+                fontFamily: 'DM Sans',
+                fontWeight: FontWeight.w500,
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            if (record.cancellationFee > 0) ...[
+              const SizedBox(height: 3),
+              Text(
+                'Late cancellation fee: ₱${record.cancellationFee.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontFamily: 'DM Sans',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                  color: AppColors.warning,
+                ),
+              ),
+            ],
+          ],
           if (isCompleted) ...[
             const Divider(height: 24, color: AppColors.border),
             _FareBreakdown(record: record),
@@ -563,6 +632,22 @@ class _Badge extends StatelessWidget {
           color: color,
         ),
       ),
+    );
+  }
+}
+
+class _ChatIconButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ChatIconButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(width: 30, height: 30,
+        decoration: BoxDecoration(color: AppColors.surfaceAlt, shape: BoxShape.circle,
+            border: Border.all(color: AppColors.border, width: 1.5)),
+        child: const Center(child: Text('💬', style: TextStyle(fontSize: 14)))),
     );
   }
 }

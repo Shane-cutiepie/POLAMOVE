@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/validators.dart';
+import 'cloudinary_service.dart';
 import 'location_service.dart';
+import 'message_alert_service.dart';
 
 /// Thrown for anything the user should see a readable message about.
 class AuthException implements Exception {
@@ -19,17 +21,19 @@ class AuthService {
   static User? get currentUser => _auth.currentUser;
 
   // ── Driver Sign Up ─────────────────────────────────
-  /// Creates the Auth account with the driver's real email, writes the
-  /// users/{uid} and drivers/{uid} documents, and registers the phone number
-  /// in phone_index so the driver can also log in by phone.
+  /// Creates the Auth account with the driver's real email, uploads the
+  /// three document photos to Cloudinary, writes the users/{uid} and
+  /// drivers/{uid} documents, and registers the phone number in phone_index
+  /// so the driver can also log in by phone.
   ///
-  /// NOTE: Document photos are stored as device-local file paths rather than
-  /// Cloud Storage URLs — Cloud Storage requires the Blaze billing plan, which
-  /// this project does not use. See _localDocumentPath() for the swap point.
+  /// [onDocumentsUploaded] fires once all three uploads finish and the
+  /// Firestore writes are about to start — the caller (the signup screen)
+  /// uses it to move a status line from "Uploading…" to "Creating your
+  /// account…".
   ///
-  /// If any step after account creation fails, the Auth account is deleted so
-  /// the email stays usable instead of hitting "email already in use" on a
-  /// half-finished signup.
+  /// If any step after account creation fails — including a document
+  /// upload — the Auth account is deleted so the email stays usable instead
+  /// of hitting "email already in use" on a half-finished signup.
   static Future<void> signUpDriver({
     required String firstName,
     required String lastName,
@@ -41,10 +45,10 @@ class AuthService {
     required String plateNo,
     required String licenseNo,
     required String licenseExpiry,
-    required String preferredRoute,
     required File licensePhoto,
     required File orcrPhoto,
     required File barangayClearancePhoto,
+    void Function()? onDocumentsUploaded,
   }) async {
     UserCredential? cred;
     final cleanEmail = Validators.normalizeEmail(email);
@@ -59,6 +63,17 @@ class AuthService {
       );
 
       final uid = cred.user!.uid;
+
+      // Concurrent, not sequential — three uploads run one after another on
+      // a slow connection would be three times the wait for no reason.
+      final documentUrls = await Future.wait([
+        CloudinaryService.uploadDocument(licensePhoto, publicIdHint: 'license'),
+        CloudinaryService.uploadDocument(orcrPhoto, publicIdHint: 'orcr'),
+        CloudinaryService.uploadDocument(barangayClearancePhoto,
+            publicIdHint: 'barangay_clearance'),
+      ]);
+      onDocumentsUploaded?.call();
+
       final batch = _db.batch();
 
       batch.set(_db.collection('users').doc(uid), {
@@ -76,15 +91,14 @@ class AuthService {
         'plateNo': plateNo.trim().toUpperCase(),
         'licenseNo': licenseNo.trim().toUpperCase(),
         'licenseExpiry': licenseExpiry,
-        'preferredRoute': preferredRoute,
         'status': 'pending',
         'isOnline': false,
         'documents': {
-          'licenseUrl': _localDocumentPath(licensePhoto),
-          'orcrUrl': _localDocumentPath(orcrPhoto),
-          'barangayClearanceUrl': _localDocumentPath(barangayClearancePhoto),
+          'licenseUrl': documentUrls[0],
+          'orcrUrl': documentUrls[1],
+          'barangayClearanceUrl': documentUrls[2],
         },
-        'documentsStoredLocally': true,
+        'documentsStoredLocally': false,
         'totalRides': 0,
         'rating': 0,
         'totalEarnings': 0,
@@ -222,11 +236,15 @@ class AuthService {
   }
 
   // ── Log Out ────────────────────────────────────────
-  static Future<void> logOut() => _auth.signOut();
+  static Future<void> logOut() {
+    MessageAlertService.stop();
+    return _auth.signOut();
+  }
 
   /// Clears the driver's online flag and last known position before signing
   /// out, so they don't stay visible to passengers after closing the app.
   static Future<void> logOutDriver() async {
+    MessageAlertService.stop();
     await LocationService.stopTracking();
     await LocationService.clearLocation();
 
@@ -272,11 +290,6 @@ class AuthService {
       _db.collection('drivers').doc(uid).snapshots();
 
   // ── Helpers ────────────────────────────────────────
-  /// The single swap point for cloud storage. To move to Cloud Storage later:
-  /// add firebase_storage, make this async, upload, return the download URL.
-  /// Nothing else in the app needs to change.
-  static String _localDocumentPath(File file) => file.path;
-
   static String _authErrorMessage(FirebaseAuthException e) {
     switch (e.code) {
       case 'email-already-in-use':
