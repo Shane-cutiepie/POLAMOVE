@@ -143,10 +143,12 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       if (!mounted) return;
       _showError(e.message);
     } finally {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _isSubmitting = false;
         _submitPhase = null;
       });
+      }
     }
   }
 
@@ -289,7 +291,7 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
                 maintainAnimation: true,
                 maintainState: true,
                 child: Container(
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.14),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(50)),
                   padding: const EdgeInsets.all(4),
                   child: Row(children: [
@@ -304,7 +306,7 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
               const _PolaMoveLogo(fontSize: 25),
               const SizedBox(height: 3),
               Text(_badgeLabel, style: TextStyle(fontFamily: 'Syne', fontSize: 11,
-                  fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.62), letterSpacing: 3)),
+                  fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.62), letterSpacing: 3)),
             ]),
           ),
         ),
@@ -344,8 +346,10 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
             lastDate: DateTime.now().subtract(const Duration(days: 365 * 18)),
             builder: (context, child) => Theme(data: Theme.of(context).copyWith(
                 colorScheme: const ColorScheme.light(primary: AppColors.primary)), child: child!));
-          if (picked != null) _dobCtrl.text =
+          if (picked != null) {
+            _dobCtrl.text =
               '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
+          }
         },
       ),
       const SizedBox(height: 12),
@@ -403,8 +407,10 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
             initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime(2040),
             builder: (context, child) => Theme(data: Theme.of(context).copyWith(
                 colorScheme: const ColorScheme.light(primary: AppColors.primary)), child: child!));
-          if (picked != null) _licExpCtrl.text =
+          if (picked != null) {
+            _licExpCtrl.text =
               '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
+          }
         },
       ),
       const SizedBox(height: 22),
@@ -424,7 +430,7 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(color: AppColors.primaryTint, borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
         child: const Text('📋 Please upload clear photos of your documents. All uploads will be reviewed by the admin.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
@@ -461,7 +467,7 @@ class _AuthDriverScreenState extends State<AuthDriverScreen> {
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(color: AppColors.primaryTint, borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
         child: const Text('✅ Please review your information before submitting.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
@@ -543,7 +549,7 @@ class _RegistrationNotice extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.22)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text(kRegistrationNoticeTitle,
@@ -586,7 +592,7 @@ class _PickerOption extends StatelessWidget {
         child: Row(children: [
           Container(width: 46, height: 46,
             decoration: BoxDecoration(color: AppColors.primaryTint, borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
             child: Icon(icon, color: AppColors.primary, size: 22)),
           const SizedBox(width: 13),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -622,7 +628,7 @@ class _DocUploadCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: uploaded ? AppColors.primaryTint : AppColors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: uploaded ? AppColors.primary.withOpacity(0.4)
+          border: Border.all(color: uploaded ? AppColors.primary.withValues(alpha: 0.4)
               : const Color(0x1C14142A), width: 1.5),
         ),
         child: Row(children: [
@@ -721,7 +727,7 @@ class _ReviewSection extends StatelessWidget {
               child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(color: AppColors.primaryTint,
                     borderRadius: BorderRadius.circular(50),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
                 child: const Text('Edit', style: TextStyle(fontFamily: 'DM Sans', fontSize: 11,
                     fontWeight: FontWeight.w700, color: AppColors.primary)))),
           ])),
@@ -844,11 +850,11 @@ class _TabButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(50),
-            boxShadow: selected ? [BoxShadow(color: Colors.black.withOpacity(0.17),
+            boxShadow: selected ? [BoxShadow(color: Colors.black.withValues(alpha: 0.17),
                 blurRadius: 10, offset: const Offset(0, 2))] : []),
           child: Text(label, textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'DM Sans', fontSize: 13, fontWeight: FontWeight.w700,
-                color: selected ? AppColors.primary : Colors.white.withOpacity(0.58))))));
+                color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.58))))));
   }
 }
 

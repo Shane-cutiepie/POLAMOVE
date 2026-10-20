@@ -31,8 +31,31 @@
 
   <title>polamove</title>
   <link rel="manifest" href="manifest.json">
+  <script src="maps-config.js"></script>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    const mapsKey = window.POLA_MAPS_API_KEY;
+    if (!mapsKey || mapsKey === 'YOUR_GOOGLE_MAPS_API_KEY') {
+      document.body.textContent =
+        'Set the Maps JavaScript API key in maps-config.js before starting the app.';
+    } else {
+      const mapsScript = document.createElement('script');
+      mapsScript.src =
+        `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}`;
+      mapsScript.async = true;
+      mapsScript.onload = () => {
+        const flutterScript = document.createElement('script');
+        flutterScript.src = 'flutter_bootstrap.js';
+        flutterScript.async = true;
+        document.body.appendChild(flutterScript);
+      };
+      mapsScript.onerror = () => {
+        document.body.textContent =
+          'Unable to load Google Maps. Check the Maps JavaScript API key and referrer restrictions.';
+      };
+      document.head.appendChild(mapsScript);
+    }
+  </script>
 </body>
 </html>

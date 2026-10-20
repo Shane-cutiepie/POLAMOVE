@@ -335,7 +335,7 @@ class _MessageBubble extends StatelessWidget {
                       color: AppColors.primaryTint,
                       shape: BoxShape.circle,
                       border:
-                          Border.all(color: AppColors.primary.withOpacity(0.3))),
+                          Border.all(color: AppColors.primary.withValues(alpha: 0.3))),
                   child: UserAvatar(avatarUrl: avatarUrl,
                       avatarIndex: avatarIndex, size: 26, emojiSize: 13))
               : null,

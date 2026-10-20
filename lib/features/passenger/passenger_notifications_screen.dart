@@ -433,7 +433,7 @@ class _DeleteNotifRow extends StatelessWidget {
           Container(width: 46, height: 46,
             decoration: BoxDecoration(color: AppColors.primaryTint,
                 borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
             child: const Icon(Icons.delete_outline, color: AppColors.primary, size: 22)),
           const SizedBox(width: 13),
           const Expanded(child: Text('Delete notification',

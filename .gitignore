@@ -54,6 +54,8 @@ build/
 *.jks
 *.keystore
 key.properties
+admin/maps-config.js
+web/maps-config.js
 
 # macOS
 **/.DS_Store

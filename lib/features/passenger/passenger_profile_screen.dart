@@ -125,7 +125,7 @@ class PassengerProfileScreen extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 13),
-                  side: BorderSide(color: AppColors.primary.withOpacity(0.4), width: 1.5),
+                  side: BorderSide(color: AppColors.primary.withValues(alpha: 0.4), width: 1.5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
                 child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -198,9 +198,9 @@ class PassengerProfileScreen extends StatelessWidget {
               GestureDetector(
                 onTap: onBack ?? () => Navigator.maybePop(context),
                 child: Container(width: 31, height: 31,
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.15),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: Colors.white.withOpacity(0.2))),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2))),
                   child: const Icon(Icons.chevron_left_rounded,
                       color: Colors.white, size: 20)),
               ),
@@ -209,9 +209,9 @@ class PassengerProfileScreen extends StatelessWidget {
               GestureDetector(
                 onTap: () => showAvatarPickerSheet(context, avatarIndex),
                 child: Container(width: 60, height: 60,
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withOpacity(0.4), width: 2)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2)),
                   child: UserAvatar(avatarUrl: avatarUrl, avatarIndex: avatarIndex,
                       size: 60, emojiSize: 28)),
               ),
@@ -221,7 +221,7 @@ class PassengerProfileScreen extends StatelessWidget {
                     fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
                 const SizedBox(height: 2),
                 Text('Passenger · Polangui',
-                    style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7))),
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.7))),
               ])),
             ]),
           ),

@@ -86,7 +86,7 @@ class AppDropdownField<T> extends StatelessWidget {
           color: AppColors.textSecondary, letterSpacing: 0.7)),
       const SizedBox(height: 5),
       DropdownButtonFormField<T>(
-        value: value,
+        initialValue: value,
         hint: Text(placeholder, style: const TextStyle(fontFamily: 'DM Sans',
             fontSize: 14, color: AppColors.textTertiary)),
         items: items.map((e) => DropdownMenuItem(value: e,

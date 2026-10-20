@@ -161,7 +161,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
                 children: [
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.14),
+                      color: Colors.white.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(50),
                     ),
                     padding: const EdgeInsets.all(4),
@@ -189,7 +189,7 @@ class _AuthPassengerScreenState extends State<AuthPassengerScreen> {
                       fontFamily: 'Syne',
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white.withOpacity(0.62),
+                      color: Colors.white.withValues(alpha: 0.62),
                       letterSpacing: 3,
                     ),
                   ),
@@ -277,7 +277,7 @@ class _RegistrationNotice extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.22)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text(kRegistrationNoticeTitle,
@@ -367,12 +367,12 @@ class _TabButton extends StatelessWidget {
             color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(50),
             boxShadow: selected
-                ? [BoxShadow(color: Colors.black.withOpacity(0.17), blurRadius: 10, offset: const Offset(0, 2))]
+                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.17), blurRadius: 10, offset: const Offset(0, 2))]
                 : [],
           ),
           child: Text(label, textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'DM Sans', fontSize: 13, fontWeight: FontWeight.w700,
-                color: selected ? AppColors.primary : Colors.white.withOpacity(0.58))),
+                color: selected ? AppColors.primary : Colors.white.withValues(alpha: 0.58))),
         ),
       ),
     );
@@ -392,7 +392,7 @@ class _PrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary,
             foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            elevation: 0, shadowColor: AppColors.primary.withOpacity(0.38)),
+            elevation: 0, shadowColor: AppColors.primary.withValues(alpha: 0.38)),
         child: Text(label, style: const TextStyle(fontFamily: 'Syne', fontSize: 14,
             fontWeight: FontWeight.w700, letterSpacing: 0.3))));
   }

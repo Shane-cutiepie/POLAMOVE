@@ -241,7 +241,7 @@ class _UploadOption extends StatelessWidget {
         child: Row(children: [
           Container(width: 46, height: 46,
             decoration: BoxDecoration(color: AppColors.primaryTint, borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
             child: Icon(icon, color: AppColors.primary, size: 22)),
           const SizedBox(width: 13),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

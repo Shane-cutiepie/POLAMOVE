@@ -265,7 +265,7 @@ class _RideCard extends StatelessWidget {
           Container(width: 38, height: 38,
             decoration: BoxDecoration(color: AppColors.primaryTint,
                 borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
             child: Center(child: Text(ride['emoji'], style: const TextStyle(fontSize: 18)))),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

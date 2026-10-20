@@ -1,0 +1,15 @@
+.git
+.vscode
+.claude
+.dart_tool
+.pub
+build
+admin
+web/maps-config.js
+android
+ios
+linux
+macos
+windows
+*.jks
+*.keystore

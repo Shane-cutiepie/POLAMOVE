@@ -2,7 +2,7 @@
    PolaMove Admin — Live Ride Monitoring
    ──────────────────────────────────────────────────────────
    Plots the driver of every in-progress ride on the existing
-   Leaflet map. No new collections: active rides come from
+   Google map. No new collections: active rides come from
    /rides, positions from drivers/{uid}.location.
 
    Read budget: ONE listener, scoped to active rides only.
@@ -18,28 +18,28 @@ import {
   collection, query, where, onSnapshot
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-/* Status flow in lib/core/services/ride_service.dart:
-     searching → accepted → arrived → ongoing → completed | cancelled
-   Only these three have a driver attached, so only these can be plotted.
-   `searching` is still an active ride but has driverId == null — there is
-   no position to draw. completed/cancelled are never shown. */
-const PLOTTABLE_RIDE_STATUSES = ['accepted', 'arrived', 'ongoing'];
+const ACTIVE_RIDE_STATUSES = ['searching', 'accepted', 'arrived', 'ongoing'];
 
 const RIDE_STATUS_LABELS = {
-  accepted: 'Accepted',
+  searching: 'Searching for driver',
+  accepted:  'Accepted',
   arrived:  'Arrived',
-  ongoing:  'Ongoing',
+  ongoing:   'Ongoing',
 };
 
-/* ── STATE ─────────────────────────────────────────────── */
+const LOCATION_MAX_AGE_MS = 2 * 60 * 1000;
+const LOCATION_FUTURE_TOLERANCE_MS = 30 * 1000;
+
 let unsubRides  = null;
 let started     = false;
 let ridesLoaded = false;
-let error       = null;
+let ridesError  = null;
+let driversError = null;
+let hasAutoFitted = false;
 
-let activeRides = [];          // [{ id, driverId, status, type, from, to }]
-let drivers     = new Map();   // uid → { name, status, isOnline, lat, lng, approximate, updatedAt }
-const markers   = new Map();   // rideId → L.Marker
+let activeRides = [];
+let drivers     = new Map();
+const markers   = new Map();
 
 /* ══ LIFECYCLE ═════════════════════════════════════════════ */
 
@@ -47,34 +47,32 @@ export function startLiveMap(db) {
   if (started) return;
   started = true;
 
-  // Single-field `in` filter — served by the automatic index, no composite
-  // index required, and it reads only rides currently in progress.
   unsubRides = onSnapshot(
-    query(collection(db, 'rides'), where('status', 'in', PLOTTABLE_RIDE_STATUSES)),
+    query(collection(db, 'rides'), where('status', 'in', ACTIVE_RIDE_STATUSES)),
     snap => {
       activeRides = [];
 
       snap.forEach(d => {
         const v = d.data();
-        if (!v.driverId) return;            // not matched yet — nothing to plot
-
         activeRides.push({
           id:       d.id,
-          driverId: v.driverId,
+          driverId: text(v.driverId, ''),
           status:   v.status,
           type:     text(v.rideType, 'Unknown type'),
           from:     text(v.pickup?.name,  'Unknown Pickup'),
           to:       text(v.dropoff?.name, 'Unknown Destination'),
+          pickup:   coordinates(v.pickup?.location),
+          dropoff:  coordinates(v.dropoff?.location),
         });
       });
 
       ridesLoaded = true;
-      error = null;
+      ridesError = null;
       renderMarkers();
     },
     err => {
       console.warn('live map rides listener:', err.message);
-      error = err;
+      ridesError = err;
       renderMarkers();
     },
   );
@@ -83,14 +81,18 @@ export function startLiveMap(db) {
 export function stopLiveMap() {
   if (unsubRides) { unsubRides(); unsubRides = null; }
 
-  const map = leafletMap();
-  markers.forEach(m => { if (map) map.removeLayer(m); });
+  markers.forEach(({ marker, infoWindow }) => {
+    Object.values(marker).forEach(item => item?.setMap(null));
+    infoWindow.close();
+  });
   markers.clear();
 
   activeRides = [];
   drivers     = new Map();
   ridesLoaded = false;
-  error       = null;
+  ridesError = null;
+  driversError = null;
+  hasAutoFitted = false;
   started     = false;
   renderMarkers();
 }
@@ -101,120 +103,260 @@ export function stopLiveMap() {
  */
 export function applyLiveMapDrivers(directory) {
   drivers = directory instanceof Map ? directory : new Map();
+  driversError = null;
   renderMarkers();
 }
 
 export function reportLiveMapError(err) {
-  error = err;
+  driversError = err;
   renderMarkers();
 }
 
 /* ══ MARKERS ═══════════════════════════════════════════════ */
 
-/** The Leaflet instance created by initAdmMap() in index.html. */
-function leafletMap() {
+/** The Google Maps instance created by initAdmMap() in index.html. */
+function googleMap() {
   return (typeof admMap !== 'undefined' && admMap) ? admMap : null;
 }
 
 function renderMarkers() {
-  const map = leafletMap();
-  if (!map) return;        // Leaflet not up yet — initAdmMap() calls back
+  const map = googleMap();
+  if (!map) return;
 
   const live = new Set();
-  let plotted = 0, unlocatable = 0;
-
-  if (!error) {
+  const summary = {
+    total: 0,
+    searching: 0,
+    pickup: 0,
+    dropoff: 0,
+    liveDrivers: 0,
+    staleDrivers: 0,
+    missingDrivers: 0,
+  };
+  if (!ridesError) {
     for (const ride of activeRides) {
-      const d = drivers.get(ride.driverId);
+      const driver = ride.driverId ? drivers.get(ride.driverId) : null;
+      const location = driverLocationState(driver);
+      summary.total += 1;
+      if (ride.status === 'searching') summary.searching += 1;
+      if (ride.pickup) summary.pickup += 1;
+      if (ride.dropoff) summary.dropoff += 1;
+      if (location.current) summary.liveDrivers += 1;
+      else if (location.point) summary.staleDrivers += 1;
+      else if (ride.status !== 'searching') summary.missingDrivers += 1;
 
-      /* A driver is only shown as live if they are approved, online, and have
-         a stored position. Going offline clears drivers/{uid}.location in
-         LocationService.clearLocation(), so an offline driver has nothing to
-         draw anyway. A deleted or unapproved driver is skipped, not crashed. */
-      if (!d || d.status !== 'approved' || !d.isOnline ||
-          d.lat === null || d.lng === null) {
-        unlocatable += 1;
-        continue;
-      }
-
+      if (!ride.pickup && !ride.dropoff && !location.point) continue;
       live.add(ride.id);
-      plotted += 1;
-      upsertMarker(map, ride, d);
+      upsertRideMarkers(map, ride, driver, location);
     }
   }
 
-  /* Rides that completed, were cancelled, or lost their driver drop off the
-     map. Only these layers are touched — the map itself is never rebuilt. */
-  markers.forEach((marker, rideId) => {
-    if (!live.has(rideId)) {
-      map.removeLayer(marker);
-      markers.delete(rideId);
-    }
-  });
+  if (ridesError) markers.forEach((_, id) => live.add(id));
+  else {
+    markers.forEach((entry, rideId) => {
+      if (!live.has(rideId)) {
+        Object.values(entry.marker).forEach(item => item?.setMap(null));
+        entry.infoWindow.close();
+        markers.delete(rideId);
+      }
+    });
+  }
 
-  updateStatus(plotted, unlocatable);
+  updateStatus(summary);
+  if (!hasAutoFitted && summary.total > 0) focusLiveRides();
 }
 
-function upsertMarker(map, ride, d) {
-  const popup = popupHtml(ride, d);
-  const existing = markers.get(ride.id);
+function driverLocationState(driver) {
+  if (!driver || driver.status !== 'approved' ||
+      !validCoordinates({ lat: driver.lat, lng: driver.lng })) {
+    return { point: null, current: false, approximate: false, label: 'No driver GPS' };
+  }
 
-  if (existing) {
-    // Move the marker in place rather than recreating it, so the map never
-    // flickers and the popup stays open while the driver drives.
-    const at = existing.getLatLng();
-    if (at.lat !== d.lat || at.lng !== d.lng) existing.setLatLng([d.lat, d.lng]);
-    existing.setPopupContent(popup);
+  const point = { lat: driver.lat, lng: driver.lng };
+  if (driver.approximate) {
+    return { point, current: false, approximate: true, label: 'Approximate driver location' };
+  }
+  if (!driver.updatedAt) {
+    return { point, current: false, approximate: false, label: 'Driver GPS time unavailable' };
+  }
+
+  const ageMs = Date.now() - driver.updatedAt.getTime();
+  const current = driver.isOnline &&
+    ageMs >= -LOCATION_FUTURE_TOLERANCE_MS &&
+    ageMs <= LOCATION_MAX_AGE_MS;
+  return {
+    point,
+    current,
+    approximate: false,
+    label: current ? 'Live driver GPS' : `Last driver GPS ${relativeTime(driver.updatedAt)}`,
+  };
+}
+
+function upsertRideMarkers(map, ride, driver, location) {
+  let entry = markers.get(ride.id);
+  if (!entry) {
+    entry = {
+      marker: { driver: null, pickup: null, dropoff: null },
+      infoWindow: new google.maps.InfoWindow(),
+    };
+    markers.set(ride.id, entry);
+  }
+
+  entry.infoWindow.setContent(popupHtml(ride, driver, location));
+  setMarker(map, entry, 'driver', location.point, {
+    title: location.label,
+    label: { text: 'T', color: '#fff', fontWeight: '700' },
+    fillColor: location.current ? '#C41E3A' : location.approximate ? '#D97706' : '#71717A',
+  });
+  setMarker(map, entry, 'pickup', ride.pickup, {
+    title: 'Passenger pickup point selected in the app',
+    label: { text: 'P', color: '#fff', fontWeight: '700' },
+    fillColor: '#16A34A',
+  });
+  setMarker(map, entry, 'dropoff', ride.dropoff, {
+    title: 'Ride destination',
+    label: { text: 'D', color: '#fff', fontWeight: '700' },
+    fillColor: '#2563EB',
+  });
+}
+
+function setMarker(map, entry, kind, point, options) {
+  const existing = entry.marker[kind];
+  if (!point) {
+    existing?.setMap(null);
     return;
   }
 
-  // Same divIcon treatment the demo markers used for an in-progress ride.
-  const icon = L.divIcon({
-    html: '<div style="font-size:18px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))">🔴</div>',
-    iconAnchor: [9, 18],
-    className: '',
-  });
+  const markerOptions = {
+    map,
+    position: point,
+    title: options.title,
+    label: options.label,
+    zIndex: kind === 'driver' ? 30 : kind === 'pickup' ? 20 : 10,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: kind === 'driver' ? 10 : 9,
+      fillColor: options.fillColor,
+      fillOpacity: 1,
+      strokeColor: '#fff',
+      strokeWeight: 2,
+    },
+  };
 
-  markers.set(ride.id, L.marker([d.lat, d.lng], { icon }).addTo(map).bindPopup(popup));
+  if (existing) {
+    existing.setMap(map);
+    existing.setPosition(point);
+    existing.setOptions(markerOptions);
+    return;
+  }
+
+  const marker = new google.maps.Marker(markerOptions);
+  marker.addListener('click', () => {
+    entry.infoWindow.open({ map, anchor: marker });
+  });
+  entry.marker[kind] = marker;
 }
 
-/* Admin-facing ride detail only. Passenger identity is deliberately left out —
-   the live map doesn't need it. */
-function popupHtml(ride, d) {
+/* The app shares its selected pickup pin, not a passenger's live GPS. */
+function popupHtml(ride, driver, location) {
   const label = RIDE_STATUS_LABELS[ride.status] || ride.status || 'Unknown';
-  return `<b>${esc(d.name)}</b><br>`
+  const driverName = driver?.name ? `<b>${esc(driver.name)}</b><br>` : '';
+  const pickup = ride.pickup ? 'Pickup pin shown' : 'Pickup coordinates unavailable';
+  const dropoff = ride.dropoff ? 'Destination shown' : 'Destination coordinates unavailable';
+  return driverName
        + `${esc(ride.from)} → ${esc(ride.to)}<br>`
        + `${esc(ride.type)} · <b>${esc(label)}</b><br>`
-       + `<span style="opacity:.75">${d.approximate ? 'Approximate location' : 'GPS location'}`
-       + ` · ${esc(relativeTime(d.updatedAt))}</span>`;
+       + `${esc(pickup)} · ${esc(dropoff)}<br>`
+       + `<span style="opacity:.75">${esc(location.label)}</span>`;
 }
 
-/* ══ STATUS LINE ═══════════════════════════════════════════
-   The map always stays visible; this only reports what isn't on it. */
-function updateStatus(plotted, unlocatable) {
+function updateStatus(summary) {
   const box = document.getElementById('map-status');
   if (!box) return;
 
-  const show = msg => {
-    box.textContent = msg;
-    box.classList.add('show');
-  };
+  box.classList.add('show');
+  if (ridesError) {
+    box.textContent = 'Ride data unavailable — check admin access or connection';
+    return;
+  }
+  if (driversError) {
+    box.textContent = 'Driver updates unavailable — showing last known ride details';
+    return;
+  }
+  if (!ridesLoaded) {
+    box.textContent = 'Loading active rides…';
+    return;
+  }
+  if (summary.total === 0) {
+    box.textContent = 'No active rides';
+    return;
+  }
 
-  if (error)        return show('Unable to load active rides');
-  if (!ridesLoaded) return show('Loading active rides…');
-
-  const stranded = unlocatable === 1
-    ? '1 active ride has no driver location'
-    : `${unlocatable} active rides have no driver location`;
-
-  if (plotted === 0 && unlocatable === 0) return show('No active rides');
-  if (plotted === 0)                      return show(stranded);
-  if (unlocatable > 0)                    return show(stranded);
-
-  box.classList.remove('show');
+  const rideWord = summary.total === 1 ? 'ride' : 'rides';
+  const details = [];
+  if (summary.pickup) {
+    details.push(`${summary.pickup} pickup${summary.pickup === 1 ? '' : 's'}`);
+  }
+  if (summary.dropoff) {
+    details.push(`${summary.dropoff} destination${summary.dropoff === 1 ? '' : 's'}`);
+  }
+  if (summary.liveDrivers) {
+    details.push(`${summary.liveDrivers} live driver${summary.liveDrivers === 1 ? '' : 's'}`);
+  }
+  if (summary.staleDrivers) {
+    details.push(`${summary.staleDrivers} stale driver GPS`);
+  }
+  if (summary.missingDrivers) {
+    details.push(`${summary.missingDrivers} driver GPS unavailable`);
+  }
+  if (summary.searching) details.push(`${summary.searching} searching`);
+  box.textContent = `${summary.total} active ${rideWord} · ${details.join(' · ')}`;
 }
 
-/* ══ HELPERS ═══════════════════════════════════════════════ */
+function focusLiveRides() {
+  const map = googleMap();
+  if (!map) return;
+  const mapElement = map.getDiv();
+  if (!mapElement.offsetWidth || !mapElement.offsetHeight) return;
+  const bounds = new google.maps.LatLngBounds();
+  let points = 0;
+
+  activeRides.forEach(ride => {
+    [ride.pickup, ride.dropoff].forEach(point => {
+      if (!point) return;
+      bounds.extend(point);
+      points += 1;
+    });
+    const driver = ride.driverId ? drivers.get(ride.driverId) : null;
+    const location = driverLocationState(driver);
+    if (location.current && location.point) {
+      bounds.extend(location.point);
+      points += 1;
+    }
+  });
+
+  if (!points) return;
+  hasAutoFitted = true;
+  if (points === 1) {
+    map.setCenter(bounds.getCenter());
+    map.setZoom(15);
+  } else {
+    map.fitBounds(bounds, 40);
+  }
+}
+
+function coordinates(value) {
+  const point = value && { lat: value.latitude, lng: value.longitude };
+  return validCoordinates(point) ? point : null;
+}
+
+function validCoordinates(point) {
+  return point &&
+    Number.isFinite(point.lat) &&
+    Number.isFinite(point.lng) &&
+    point.lat >= -90 && point.lat <= 90 &&
+    point.lng >= -180 && point.lng <= 180;
+}
 
 function text(value, fallback) {
   return (typeof value === 'string' && value.trim()) ? value.trim() : fallback;
@@ -225,9 +367,6 @@ function esc(s) {
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/* The app defines no stale-location timeout — LocationService just writes the
-   latest fix — so nothing is hidden for being old. The age is surfaced in the
-   popup instead, and the admin can judge it. */
 function relativeTime(date) {
   if (!date) return 'update time unknown';
 
@@ -244,6 +383,5 @@ function relativeTime(date) {
   return `updated ${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-/* initAdmMap() calls this once Leaflet exists, so markers appear even when the
-   snapshots landed before the map was built. */
 window.renderLiveMap = renderMarkers;
+window.focusLiveRides = focusLiveRides;

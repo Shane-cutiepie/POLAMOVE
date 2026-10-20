@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/cancel_reasons.dart';
 
@@ -120,7 +121,9 @@ class RideService {
   /// Writes a ride in `searching` state and returns its document id.
   static Future<String> createRide({
     required String pickup,
+    required LatLng pickupPoint,
     required String destination,
+    required LatLng destinationPoint,
     required String rideTypeShortId,
     required double baseFare,
     required double surcharge,
@@ -138,15 +141,25 @@ class RideService {
     final cooldown = await activeCooldown(uid);
     if (cooldown != null) {
       throw RideException(
-          'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.');
+        'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.',
+      );
     }
 
     try {
       final doc = await _rides.add({
         'passengerId': uid,
         'driverId': null,
-        'pickup': {'name': pickup},
-        'dropoff': {'name': destination},
+        'pickup': {
+          'name': pickup,
+          'location': GeoPoint(pickupPoint.latitude, pickupPoint.longitude),
+        },
+        'dropoff': {
+          'name': destination,
+          'location': GeoPoint(
+            destinationPoint.latitude,
+            destinationPoint.longitude,
+          ),
+        },
         'rideType': _rideTypeName(rideTypeShortId),
         'rideTypeShortId': rideTypeShortId,
         'baseFare': baseFare,
@@ -171,15 +184,16 @@ class RideService {
 
   // ── Watch ──────────────────────────────────────────
   static Stream<DocumentSnapshot<Map<String, dynamic>>> watchRide(
-          String rideId) =>
-      _rides.doc(rideId).snapshots();
+    String rideId,
+  ) => _rides.doc(rideId).snapshots();
 
   /// Open bookings, oldest first so the longest-waiting passenger is served
   /// before newer ones.
-  static Stream<QuerySnapshot<Map<String, dynamic>>> searchingRides() => _rides
-      .where('status', isEqualTo: 'searching')
-      .orderBy('requestedAt')
-      .snapshots();
+  static Stream<QuerySnapshot<Map<String, dynamic>>> searchingRides() =>
+      _rides
+          .where('status', isEqualTo: 'searching')
+          .orderBy('requestedAt')
+          .snapshots();
 
   // ── Driver actions ─────────────────────────────────
   /// Claims a ride for the signed-in driver. Runs in a transaction so two
@@ -193,7 +207,8 @@ class RideService {
     final cooldown = await activeCooldown(uid);
     if (cooldown != null) {
       throw RideException(
-          'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.');
+        'Your bookings are paused until ${_formatCooldownTime(cooldown)} because of repeated cancellations.',
+      );
     }
 
     String? passengerId;
@@ -340,14 +355,16 @@ class RideService {
     }
 
     final trimmedReasonText = reasonText?.trim();
-    if (reason == 'other' && (trimmedReasonText == null || trimmedReasonText.isEmpty)) {
+    if (reason == 'other' &&
+        (trimmedReasonText == null || trimmedReasonText.isEmpty)) {
       throw RideException('Please describe your reason for cancelling.');
     }
-    final cappedReasonText = trimmedReasonText == null
-        ? null
-        : (trimmedReasonText.length > 200
-            ? trimmedReasonText.substring(0, 200)
-            : trimmedReasonText);
+    final cappedReasonText =
+        trimmedReasonText == null
+            ? null
+            : (trimmedReasonText.length > 200
+                ? trimmedReasonText.substring(0, 200)
+                : trimmedReasonText);
 
     String? passengerId;
     String? driverId;
@@ -383,9 +400,11 @@ class RideService {
           throw RideException('You are not part of this ride.');
         }
 
-        fee = (role == 'passenger' && (status == 'arrived' || status == 'ongoing'))
-            ? 20
-            : 0;
+        fee =
+            (role == 'passenger' &&
+                    (status == 'arrived' || status == 'ongoing'))
+                ? 20
+                : 0;
 
         tx.update(rideRef, {
           'status': 'cancelled',
@@ -400,26 +419,33 @@ class RideService {
         // Rate limiting (Part 6) — recorded on the canceller's own user doc,
         // read and written inside this same transaction.
         final now = Timestamp.now();
-        final oneHourAgo =
-            Timestamp.fromDate(now.toDate().subtract(const Duration(hours: 1)));
-        final history = ((userSnap.data()?['recentCancellations'] as List?) ?? [])
-            .whereType<Timestamp>()
-            .toList()
-          ..add(now)
-          ..sort();
+        final oneHourAgo = Timestamp.fromDate(
+          now.toDate().subtract(const Duration(hours: 1)),
+        );
+        final history =
+            ((userSnap.data()?['recentCancellations'] as List?) ?? [])
+                .whereType<Timestamp>()
+                .toList()
+              ..add(now)
+              ..sort();
         final trimmedHistory =
-            history.length > 10 ? history.sublist(history.length - 10) : history;
+            history.length > 10
+                ? history.sublist(history.length - 10)
+                : history;
         final withinHour =
             trimmedHistory.where((t) => t.compareTo(oneHourAgo) >= 0).length;
 
-        final userUpdate = <String, dynamic>{'recentCancellations': trimmedHistory};
+        final userUpdate = <String, dynamic>{
+          'recentCancellations': trimmedHistory,
+        };
         // Five in a rolling hour triggers a 1-hour cooldown from now. The
         // original ask was "banned for the next 3 trips", which can't work —
         // a blocked user takes no trips, so nothing would ever count down.
         // A time-based cooldown is the fix.
         if (withinHour >= 5) {
-          userUpdate['cooldownUntil'] =
-              Timestamp.fromDate(now.toDate().add(const Duration(hours: 1)));
+          userUpdate['cooldownUntil'] = Timestamp.fromDate(
+            now.toDate().add(const Duration(hours: 1)),
+          );
         }
         tx.set(userRef, userUpdate, SetOptions(merge: true));
       });
@@ -459,12 +485,17 @@ class RideService {
     try {
       final canceller = await userInfo(cancellerId);
       final name =
-          '${canceller?['firstName'] ?? ''} ${canceller?['lastName'] ?? ''}'.trim();
+          '${canceller?['firstName'] ?? ''} ${canceller?['lastName'] ?? ''}'
+              .trim();
       final displayName = name.isEmpty ? 'The other party' : name;
 
       final rawLabel = cancelReasonLabel(
-          cancelledByRole: cancelledByRole, reason: reason, reasonText: reasonText);
-      final reasonLabel = rawLabel.length > 60 ? rawLabel.substring(0, 60) : rawLabel;
+        cancelledByRole: cancelledByRole,
+        reason: reason,
+        reasonText: reasonText,
+      );
+      final reasonLabel =
+          rawLabel.length > 60 ? rawLabel.substring(0, 60) : rawLabel;
 
       if (cancelledByRole == 'driver') {
         await _notify(
@@ -527,9 +558,14 @@ class RideService {
   static Future<int> recentCancellationCount(String uid) async {
     try {
       final doc = await _db.collection('users').doc(uid).get();
-      final cutoff = Timestamp.fromDate(DateTime.now().subtract(const Duration(hours: 1)));
+      final cutoff = Timestamp.fromDate(
+        DateTime.now().subtract(const Duration(hours: 1)),
+      );
       final entries = (doc.data()?['recentCancellations'] as List?) ?? [];
-      return entries.whereType<Timestamp>().where((t) => t.compareTo(cutoff) >= 0).length;
+      return entries
+          .whereType<Timestamp>()
+          .where((t) => t.compareTo(cutoff) >= 0)
+          .length;
     } catch (_) {
       return 0;
     }
@@ -542,7 +578,10 @@ class RideService {
   }
 
   static Future<void> _advance(
-      String rideId, String status, String stampField) async {
+    String rideId,
+    String status,
+    String stampField,
+  ) async {
     try {
       await _rides.doc(rideId).update({
         'status': status,

@@ -149,7 +149,7 @@ class _CancelRideSheetState extends State<_CancelRideSheet> {
                 decoration: BoxDecoration(
                     color: AppColors.primaryTint,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.22))),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.22))),
                 child: const Text(
                     '⚠️ Your driver has already arrived. A ₱20 late cancellation fee applies, payable in cash to your driver.',
                     style: TextStyle(fontFamily: 'DM Sans', fontSize: 12,

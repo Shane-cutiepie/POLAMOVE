@@ -34,7 +34,7 @@ class AboutScreen extends StatelessWidget {
                     decoration: BoxDecoration(color: AppColors.primaryTint,
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: AppColors.primary.withOpacity(0.3),
+                            color: AppColors.primary.withValues(alpha: 0.3),
                             width: 1.5)),
                     child: const Center(
                         child: Text('🛺', style: TextStyle(fontSize: 30)))),

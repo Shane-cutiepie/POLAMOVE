@@ -4,8 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PolaMove Admin — Polangui Transport Management</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="maps-config.js"></script>
+<script>
+window.polamoveMapsReady = false;
+window.polamoveMapsKeyMissing = !window.POLA_MAPS_API_KEY ||
+  window.POLA_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY';
+window.polamoveMapsReadyCallback = function(){
+  window.polamoveMapsReady = true;
+  if(typeof initAdmMap === 'function') initAdmMap();
+};
+if(!window.polamoveMapsKeyMissing){
+  const mapsScript=document.createElement('script');
+  mapsScript.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(window.POLA_MAPS_API_KEY)}&loading=async&callback=polamoveMapsReadyCallback`;
+  mapsScript.async=true;
+  mapsScript.defer=true;
+  document.head.appendChild(mapsScript);
+}
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -37,9 +52,6 @@ html[data-theme="dark"]{
   --shadow:0 4px 24px rgba(0,0,0,.5);
   color-scheme:dark;
 }
-html[data-theme="dark"] .leaflet-tile{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.92)}
-html[data-theme="dark"] .leaflet-control-attribution{background:rgba(0,0,0,.6)!important;color:var(--t3)!important}
-html[data-theme="dark"] .leaflet-control-attribution a{color:var(--t2)!important}
 html,body,.sidebar,.topbar,.content,.card,.stat-card,.nav-item,input,select,textarea,table,td,th{
   transition:background-color .22s ease,border-color .22s ease,color .22s ease;
 }
@@ -161,10 +173,15 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 
 /* ══ MAP ══ */
 #adm-map{height:240px;position:relative}
-/* Live map status line — sits over the map, never replaces it. */
-.map-status{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:800;background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);padding:7px 13px;font-size:11px;font-weight:600;color:var(--t2);white-space:nowrap;pointer-events:none;box-shadow:var(--shadow);display:none}
+.map-wrap{position:relative}
+.map-status{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);z-index:800;background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);padding:7px 13px;font-size:11px;font-weight:600;color:var(--t2);text-align:center;max-width:calc(100% - 20px);pointer-events:none;box-shadow:var(--shadow);display:none}
 .map-status.show{display:block}
-.leaflet-control-container .leaflet-top,.leaflet-control-container .leaflet-bottom{display:none}
+.map-legend{position:absolute;top:8px;right:8px;z-index:800;display:flex;gap:9px;padding:6px 9px;background:var(--s1);border:1px solid var(--b2);border-radius:var(--r);font-size:10px;font-weight:700;color:var(--t2);pointer-events:none;box-shadow:var(--shadow)}
+.map-legend span{display:flex;align-items:center;gap:4px}
+.map-legend b{display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-size:9px}
+.map-legend .legend-driver{background:#C41E3A}
+.map-legend .legend-pickup{background:#16A34A}
+.map-legend .legend-dropoff{background:#2563EB}
 
 /* ══ TABLE ══ */
 .tbl-wrap{overflow-x:auto}
@@ -627,7 +644,7 @@ tbody tr:hover td{background:var(--s2)}
     </div>
     <div class="tb-right">
       <div class="live-indicator" id="tb-live"><div class="live-dot"></div>System Live</div>
-      <div class="tb-btn" id="tb-export" style="display:none" onclick="exportReport()">📥 Export</div>
+      <div class="tb-btn" id="tb-export" style="display:none" onclick="exportReport()">📥 Export PNG</div>
       <div class="tb-btn primary" id="tb-approve" style="display:none" onclick="openApproveModal()">+ Approve Driver</div>
     </div>
   </div>
@@ -677,11 +694,20 @@ tbody tr:hover td{background:var(--s2)}
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">📍 Live Ride Monitoring — Polangui, Albay <div class="live-indicator" style="font-size:10px;padding:3px 9px"><div class="live-dot"></div>LIVE</div></div>
-            <div class="card-action" onclick="navTo('rides')">View All Rides</div>
+            <div style="display:flex;gap:7px">
+              <div class="card-action" onclick="window.focusLiveRides&&window.focusLiveRides()">Focus Active Rides</div>
+              <div class="card-action" onclick="navTo('rides')">View All Rides</div>
+            </div>
           </div>
-          <!-- #map-status reports what is NOT on the map (loading, no active
-               rides, missing driver location). The map itself always stays. -->
-          <div id="adm-map"><div class="map-status show" id="map-status">Loading active rides…</div></div>
+          <div class="map-wrap">
+            <div id="adm-map"></div>
+            <div class="map-status show" id="map-status">Loading active rides…</div>
+            <div class="map-legend" aria-label="Map marker legend">
+              <span><b class="legend-driver">T</b>Driver</span>
+              <span><b class="legend-pickup">P</b>Pickup</span>
+              <span><b class="legend-dropoff">D</b>Destination</span>
+            </div>
+          </div>
         </div>
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:14px">
@@ -1093,6 +1119,13 @@ async function doLogin(){
     setTimeout(()=>{ls.style.display='none';},420);
 
     window.startLiveData();
+    setTimeout(()=>{
+      initAdmMap();
+      if(admMap){
+        google.maps.event.trigger(admMap,'resize');
+        if(window.renderLiveMap)window.renderLiveMap();
+      }
+    },450);
     showToast('👋 Welcome back, '+capitalise(displayName)+'!','grn');
   }catch(err){
     errMsg.textContent=window.adminAuthError
@@ -1132,7 +1165,7 @@ function adminLogout(){
 /* ══════════════════════════════════════
    DATA
 ══════════════════════════════════════ */
-const CENTER=[13.2931,123.4879];
+const CENTER={lat:13.2931,lng:123.4879};
 
 /* The ten Polangui landmarks offered as pickup/destination points — must
    stay in sync with kPolanguiLocations in
@@ -1208,13 +1241,23 @@ let RIDES_STATE='loading';
 let admMap=null;
 function initAdmMap(){
   if(admMap)return;
-  admMap=L.map('adm-map',{zoomControl:true,attributionControl:false}).setView(CENTER,15);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd'}).addTo(admMap);
+  const status=document.getElementById('map-status');
+  if(!window.POLA_MAPS_API_KEY||window.polamoveMapsKeyMissing){
+    if(status){status.textContent='Configure admin/maps-config.js with a Google Maps API key';status.classList.add('show')}
+    return;
+  }
+  if(!window.google?.maps){
+    if(status){status.textContent='Loading Google Maps…';status.classList.add('show')}
+    return;
+  }
+  admMap=new google.maps.Map(document.getElementById('adm-map'),{
+    center:CENTER,zoom:15,streetViewControl:false,mapTypeControl:false,
+  });
   /* Markers are owned by live_map.js, which plots the driver of every
      in-progress ride from drivers/{uid}.location. Painting once here covers
-     the case where the Firestore snapshots arrived before Leaflet was up. */
+     the case where the Firestore snapshots arrived before Google Maps was up. */
   if(window.renderLiveMap)window.renderLiveMap();
-  setTimeout(()=>admMap.invalidateSize(),200);
+  setTimeout(()=>google.maps.event.trigger(admMap,'resize'),200);
 }
 
 /* ══ NAVIGATION ══ */
@@ -1235,7 +1278,13 @@ function navTo(v){
   document.getElementById('tb-title').textContent=meta.title;
   document.getElementById('tb-crumb').textContent=meta.crumb;
   applyTopbarContext(v);
-  if(v==='dashboard')setTimeout(()=>{initAdmMap();admMap&&admMap.invalidateSize();},200);
+  if(v==='dashboard')setTimeout(()=>{
+    initAdmMap();
+    if(admMap){
+      google.maps.event.trigger(admMap,'resize');
+      if(window.renderLiveMap)window.renderLiveMap();
+    }
+  },200);
   buildTables(v);
 }
 
@@ -1255,8 +1304,164 @@ function applyTopbarContext(v){
 }
 
 function exportReport(){
-  showToast('📥 Exporting report…','grn');
-  // TODO: generate a CSV from the rides currently loaded
+  const report=document.getElementById('view-reports');
+  if(!report){
+    showToast('Could not find the analytics report to export.','red');
+    return;
+  }
+
+  try{
+    const canvas=document.createElement('canvas');
+    canvas.width=1600;
+    canvas.height=1330;
+    const ctx=canvas.getContext('2d');
+    if(!ctx)throw new Error('Your browser could not create an image canvas.');
+
+    const colors={
+      ink:'#16161F',muted:'#6A6A80',soft:'#9E9EB4',paper:'#F5F5F9',
+      white:'#FFFFFF',line:'#E5E5EF',red:'#C41E3A',green:'#16A34A',
+      amber:'#D97706',blue:'#3B82F6',track:'#F0F0F6'
+    };
+    const roundRect=(x,y,w,h,r,fill,stroke)=>{
+      ctx.beginPath();
+      ctx.roundRect(x,y,w,h,r);
+      ctx.fillStyle=fill;
+      ctx.fill();
+      if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
+    };
+    const text=(value,x,y,size=18,color=colors.ink,weight=500,font='DM Sans')=>{
+      ctx.fillStyle=color;
+      ctx.font=`${weight} ${size}px "${font}", Arial, sans-serif`;
+      ctx.fillText(String(value??''),x,y);
+    };
+    const fitText=(value,x,y,maxWidth,size=16,color=colors.ink,weight=500)=>{
+      ctx.fillStyle=color;
+      ctx.font=`${weight} ${size}px "DM Sans", Arial, sans-serif`;
+      let output=String(value??'');
+      while(output.length&&ctx.measureText(output).width>maxWidth)output=output.slice(0,-2);
+      if(output!==String(value??''))output=output.trimEnd()+'…';
+      ctx.fillText(output,x,y);
+    };
+    const value=id=>document.getElementById(id)?.textContent?.trim()||'—';
+    const reportCards=[
+      ['Completed Rides','rp-rides','rp-rides-sub',colors.green],
+      ['Total Revenue','rp-revenue',null,colors.amber],
+      ['Average Fare','rp-avgfare',null,colors.blue],
+      ['Cancellation Rate','rp-cancel','rp-cancel-sub',colors.red],
+      ['Approved Drivers','rp-drivers','rp-drivers-sub',colors.red],
+      ['Registered Passengers','rp-passengers',null,colors.green],
+    ];
+
+    ctx.fillStyle=colors.paper;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    roundRect(40,32,1520,126,22,colors.white,colors.line);
+    roundRect(64,54,76,76,18,colors.red);
+    text('P',86,106,40,colors.white,800,'Syne');
+    text('POLAMOVE',160,78,16,colors.red,800,'Syne');
+    text('Reports & Analytics',160,112,30,colors.ink,800,'Syne');
+    const exportedAt=new Date().toLocaleString('en-PH',{
+      timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'
+    });
+    ctx.textAlign='right';
+    text('EXPORTED',1518,78,12,colors.soft,700);
+    text(exportedAt,1518,108,17,colors.muted,600);
+    ctx.textAlign='left';
+
+    const scope=report.querySelector('.info-note .in-sub')?.textContent?.trim()
+      ||'Analytics summary from the Admin console.';
+    fitText(scope,56,188,1488,15,colors.muted,500);
+
+    const cardX=[40,550,1060],cardY=[220,390],cardW=500,cardH=148;
+    reportCards.forEach((card,index)=>{
+      const x=cardX[index%3],y=cardY[Math.floor(index/3)];
+      roundRect(x,y,cardW,cardH,16,colors.white,colors.line);
+      roundRect(x+20,y+20,5,cardH-40,3,card[3]);
+      text(card[0].toUpperCase(),x+42,y+46,13,colors.muted,700);
+      fitText(value(card[1]),x+42,y+88,cardW-80,30,colors.ink,800);
+      if(card[2])fitText(value(card[2]),x+42,y+121,cardW-80,14,colors.muted,500);
+    });
+
+    const drawRankedCard=(id,title,x,y)=>{
+      const box=document.getElementById(id);
+      const rows=[...(box?.querySelectorAll('.bar-row')||[])].map(row=>({
+        label:row.querySelector('.bar-lbl')?.textContent?.trim()||'—',
+        count:row.querySelector('.bar-val')?.textContent?.trim()||'0',
+      }));
+      roundRect(x,y,740,300,16,colors.white,colors.line);
+      text(title,x+24,y+40,20,colors.ink,700,'Syne');
+      ctx.strokeStyle=colors.line;
+      ctx.beginPath();ctx.moveTo(x+24,y+58);ctx.lineTo(x+716,y+58);ctx.stroke();
+      if(!rows.length){
+        text(box?.innerText?.trim()||'No data available',x+24,y+104,16,colors.muted,500);
+        return;
+      }
+      const max=Math.max(1,...rows.map(row=>Number(row.count)||0));
+      rows.slice(0,5).forEach((row,index)=>{
+        const rowY=y+94+index*38;
+        fitText(row.label,x+24,rowY+5,250,14,colors.muted,600);
+        roundRect(x+290,rowY-10,350,14,7,colors.track);
+        roundRect(x+290,rowY-10,Math.max(5,350*(Number(row.count)||0)/max),14,7,
+          index===rows.length-1?colors.green:colors.red);
+        ctx.textAlign='right';
+        text(row.count,x+692,rowY+5,14,colors.ink,700);
+        ctx.textAlign='left';
+      });
+    };
+    drawRankedCard('rp-topdrivers','Top Drivers',40,570);
+    drawRankedCard('rp-toproutes','Top Routes',820,570);
+
+    const tableX=40,tableY=900,tableW=1520;
+    const bodyRows=[...(document.querySelectorAll('#rp-typebody tr')||[])]
+      .map(row=>[...row.querySelectorAll('td')].map(cell=>cell.innerText.trim()))
+      .filter(row=>row.length>1);
+    roundRect(tableX,tableY,tableW,350,16,colors.white,colors.line);
+    text('Ride Type Breakdown',tableX+24,tableY+40,20,colors.ink,700,'Syne');
+    ctx.strokeStyle=colors.line;
+    ctx.beginPath();ctx.moveTo(tableX+24,tableY+58);ctx.lineTo(tableX+tableW-24,tableY+58);ctx.stroke();
+    const headers=['Ride Type','Trips','Share','Revenue','Avg Fare','Top Route'];
+    const columns=[tableX+24,tableX+265,tableX+440,tableX+590,tableX+780,tableX+950];
+    headers.forEach((header,index)=>text(header.toUpperCase(),columns[index],tableY+88,12,colors.soft,700));
+    ctx.strokeStyle=colors.line;
+    ctx.beginPath();ctx.moveTo(tableX+24,tableY+104);ctx.lineTo(tableX+tableW-24,tableY+104);ctx.stroke();
+    if(!bodyRows.length){
+      text('No completed rides to break down',tableX+24,tableY+150,15,colors.muted,500);
+    }
+    bodyRows.slice(0,3).forEach((row,rowIndex)=>{
+      const rowY=tableY+142+rowIndex*65;
+      fitText(row[0],columns[0],rowY,220,14,colors.ink,700);
+      for(let index=1;index<5;index++)fitText(row[index],columns[index],rowY,150,14,colors.ink,500);
+      fitText(row[5],columns[5],rowY,530,14,colors.muted,500);
+      if(rowIndex<bodyRows.length-1){
+        ctx.strokeStyle=colors.line;
+        ctx.beginPath();ctx.moveTo(tableX+24,rowY+24);ctx.lineTo(tableX+tableW-24,rowY+24);ctx.stroke();
+      }
+    });
+    text('PolaMove Admin · Polangui, Albay',40,1298,13,colors.muted,600);
+    ctx.textAlign='right';
+    text('Analytics export · PNG',1560,1298,13,colors.muted,600);
+    ctx.textAlign='left';
+
+    canvas.toBlob(blob=>{
+      if(!blob){
+        showToast('Could not create the PNG file. Please try again.','red');
+        return;
+      }
+      const link=document.createElement('a');
+      const date=new Intl.DateTimeFormat('en-CA',{
+        timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'
+      }).format(new Date());
+      link.href=URL.createObjectURL(blob);
+      link.download=`polamove-analytics-${date}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+      showToast('✅ Analytics PNG downloaded','grn');
+    },'image/png');
+  }catch(err){
+    console.error('Analytics PNG export failed:',err);
+    showToast('Could not export analytics: '+err.message,'red');
+  }
 }
 
 /* ══ THEME ══

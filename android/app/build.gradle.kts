@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -7,6 +9,17 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val localProperties = Properties().apply {
+    val propertiesFile = rootProject.file("local.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { load(it) }
+    }
+}
+val googleMapsApiKey = providers.gradleProperty("GOOGLE_MAPS_ANDROID_API_KEY").orNull
+    ?: System.getenv("GOOGLE_MAPS_ANDROID_API_KEY")
+    ?: localProperties.getProperty("googleMapsApiKey")
+    ?: ""
 
 android {
     namespace = "com.example.polamove"
@@ -27,10 +40,11 @@ android {
         applicationId = "com.example.polamove"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["googleMapsApiKey"] = googleMapsApiKey
     }
 
     buildTypes {

@@ -132,7 +132,7 @@ class _RoleCardState extends State<_RoleCard> {
           boxShadow: _hovered
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.14),
+                    color: AppColors.primary.withValues(alpha: 0.14),
                     blurRadius: 36,
                     offset: const Offset(0, 10),
                   )
@@ -149,7 +149,7 @@ class _RoleCardState extends State<_RoleCard> {
                 color: AppColors.primaryTint,
                 borderRadius: BorderRadius.circular(15),
                 border: Border.all(
-                  color: AppColors.primary.withOpacity(0.22),
+                  color: AppColors.primary.withValues(alpha: 0.22),
                   width: 1,
                 ),
               ),
@@ -190,7 +190,7 @@ class _RoleCardState extends State<_RoleCard> {
                 border: Border.all(
                   color: _hovered
                       ? AppColors.primary
-                      : AppColors.primary.withOpacity(0.22),
+                      : AppColors.primary.withValues(alpha: 0.22),
                   width: 1,
                 ),
               ),
